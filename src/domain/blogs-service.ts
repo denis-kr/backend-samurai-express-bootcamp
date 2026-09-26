@@ -1,5 +1,6 @@
 import { blogsRepository } from "../repositories/blogs-repo.js";
-import type { Blog, FindAllBlogsParams } from "../repositories/blogs-repo.js";
+import type { FindAllBlogsParams } from "../repositories/blogs-repo.js";
+import type { Blog } from "../repositories/models/blog-model.js";
 import type { FindAllPostsParams } from "../repositories/posts-repo.js";
 import { postsRepository } from "../repositories/posts-repo.js";
 

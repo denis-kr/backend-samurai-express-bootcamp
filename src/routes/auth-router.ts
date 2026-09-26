@@ -53,7 +53,7 @@ router.post(
   },
 );
 router.post(
-  "/auth/registration-email-resending",
+  "/registration-email-resending",
   registrationEmailResendingValidationMiddleware,
   sendErrorsIfAnyMiddleware,
   async (req: RequestWithBody<{ email: string }>, res: Response) => {

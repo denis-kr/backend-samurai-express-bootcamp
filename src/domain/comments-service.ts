@@ -1,8 +1,6 @@
 import { commentsRepository } from "../repositories/comments-repo.js";
-import type {
-  Comment,
-  FindAllCommentsParams,
-} from "../repositories/comments-repo.js";
+import type { FindAllCommentsParams } from "../repositories/comments-repo.js";
+import type { Comment } from "../repositories/models/comment-model.js";
 import { usersRepository } from "../repositories/users-repo.js";
 
 export const commentsService = {

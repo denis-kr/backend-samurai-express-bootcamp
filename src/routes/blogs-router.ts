@@ -17,7 +17,7 @@ import type {
   RequestWithQuery,
   RequestWithParamsAndQuery,
 } from "../utils/types.js";
-import type { Blog } from "../repositories/blogs-repo.js";
+import type { Blog } from "../repositories/models/blog-model.js";
 import { postsService } from "../domain/posts-service.js";
 import { createNewPostForBlogValidationMiddleware } from "../middleware/validation/validation-posts.js";
 

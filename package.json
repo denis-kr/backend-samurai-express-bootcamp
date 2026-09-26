@@ -7,7 +7,8 @@
   "packageManager": "pnpm@12.4.1",
   "scripts": {
     "test": "vitest",
-    "dev": "concurrently \"tsc --watch\" \"node --inspect=9229 --watch-path=./dist dist/src/index.js\""
+    "dev": "concurrently \"tsc --watch\" \"node --inspect=9229 --watch-path=./dist dist/src/index.js\"",
+    "test:cov": "vitest run --coverage"
   },
   "keywords": [],
   "author": "denis-kr",
@@ -19,6 +20,7 @@
     "express-validator": "^7.3.1",
     "jsonwebtoken": "^9.0.3",
     "mongodb": "^7.0.0",
+    "mongoose": "^9.10.1",
     "nodemailer": "^10.0.10"
   },
   "devDependencies": {
@@ -27,6 +29,7 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^24.10.1",
     "@types/supertest": "^6.0.3",
+    "@vitest/coverage-v8": "4.0.14",
     "concurrently": "^9.2.1",
     "mongodb-memory-server": "^11.2.0",
     "supertest": "^7.1.4",

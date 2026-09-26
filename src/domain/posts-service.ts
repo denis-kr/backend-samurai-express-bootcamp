@@ -1,5 +1,6 @@
 import { postsRepository } from "../repositories/posts-repo.js";
-import type { FindAllPostsParams, Post } from "../repositories/posts-repo.js";
+import type { FindAllPostsParams } from "../repositories/posts-repo.js";
+import type { Post } from "../repositories/models/post-model.js";
 
 export const postsService = {
   findAllPosts: async (params: FindAllPostsParams) => {

@@ -1,4 +1,4 @@
-import { type Post } from "./../repositories/posts-repo.js";
+import { type Post } from "./../repositories/models/post-model.js";
 import express, { Router, type Response } from "express";
 import { basicAuthMiddleware } from "../middleware/auth/basic.js";
 import { authMiddleware } from "../middleware/auth/auth-middleware.js";

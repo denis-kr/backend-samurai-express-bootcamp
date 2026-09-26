@@ -1,14 +1,6 @@
-import { blogs } from "./db.js";
-import { ObjectId } from "mongodb";
-
-export type Blog = {
-  name: string;
-  description: string;
-  websiteUrl: string;
-  createdAt: Date;
-  //TODO this won't be optional in the future
-  isMembership?: boolean;
-};
+import { Types } from "mongoose";
+import { BlogModel } from "./models/blog-model.js";
+import type { Blog } from "./models/blog-model.js";
 
 export type FindAllBlogsParams = {
   pageSize: number;
@@ -20,16 +12,16 @@ export type FindAllBlogsParams = {
 
 export const blogsRepository = {
   async findById(id: string) {
-    if (!ObjectId.isValid(id)) {
+    if (!Types.ObjectId.isValid(id)) {
       return null;
     }
-    return blogs.findOne({ _id: new ObjectId(id) });
+    return BlogModel.findById(id).lean();
   },
   async getTotalCount(searchNameTerm?: string | null) {
     const query = searchNameTerm
       ? { name: { $regex: searchNameTerm, $options: "i" } }
       : {};
-    return blogs.countDocuments(query);
+    return BlogModel.countDocuments(query);
   },
   async findAll({
     pageSize,
@@ -45,30 +37,34 @@ export const blogsRepository = {
       : {};
     const sortQuery =
       sortBy && sortDirection ? { [sortBy]: sortDirection } : {};
-    return blogs.find(query).sort(sortQuery).skip(skip).limit(limit).toArray();
+    return BlogModel.find(query)
+      .sort(sortQuery)
+      .skip(skip)
+      .limit(limit)
+      .lean();
   },
   async create(blog: Blog) {
-    const result = await blogs.insertOne(blog);
-    return result.insertedId.toString();
+    const result = await BlogModel.create(blog);
+    return result._id.toString();
   },
   async deleteById(id: string) {
-    if (!ObjectId.isValid(id)) {
+    if (!Types.ObjectId.isValid(id)) {
       return false;
     }
-    const result = await blogs.deleteOne({ _id: new ObjectId(id) });
+    const result = await BlogModel.deleteOne({ _id: new Types.ObjectId(id) });
     return result.deletedCount === 1;
   },
   async updateById(id: string, blog: Omit<Blog, "createdAt" | "isMembership">) {
-    if (!ObjectId.isValid(id)) {
+    if (!Types.ObjectId.isValid(id)) {
       return false;
     }
-    const result = await blogs.updateOne(
-      { _id: new ObjectId(id) },
+    const result = await BlogModel.updateOne(
+      { _id: new Types.ObjectId(id) },
       { $set: blog },
     );
     return result.matchedCount === 1;
   },
   async deleteAll() {
-    await blogs.drop();
+    await BlogModel.deleteMany({});
   },
 };

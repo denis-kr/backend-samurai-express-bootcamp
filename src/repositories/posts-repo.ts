@@ -1,13 +1,6 @@
-import { posts } from "./db.js";
-import { ObjectId } from "mongodb";
-
-export type Post = {
-  title: string;
-  shortDescription: string;
-  content: string;
-  blogId: string;
-  blogName: string;
-};
+import { Types } from "mongoose";
+import { PostModel } from "./models/post-model.js";
+import type { Post, PostDocument } from "./models/post-model.js";
 
 export type FindAllPostsParams = {
   pageSize: number;
@@ -19,14 +12,14 @@ export type FindAllPostsParams = {
 
 export const postsRepository = {
   async findById(id: string) {
-    if (!ObjectId.isValid(id)) {
+    if (!Types.ObjectId.isValid(id)) {
       return null;
     }
-    return posts.findOne({ _id: new ObjectId(id) });
+    return PostModel.findById(id).lean();
   },
   async getTotalCount(fields?: { blogId?: string }) {
     const filter = fields?.blogId ? { blogId: fields.blogId } : {};
-    return posts.countDocuments(filter);
+    return PostModel.countDocuments(filter);
   },
   async findAll({
     pageSize,
@@ -42,30 +35,30 @@ export const postsRepository = {
       sort[sortBy] = sortDirection;
     }
     const filter = blogId ? { blogId } : {};
-    return posts.find(filter).sort(sort).skip(skip).limit(limit).toArray();
+    return PostModel.find(filter).sort(sort).skip(skip).limit(limit).lean();
   },
-  async create(post: Post & { createdAt: Date }) {
-    const result = await posts.insertOne(post);
-    return result.insertedId.toString();
+  async create(post: PostDocument) {
+    const result = await PostModel.create(post);
+    return result._id.toString();
   },
   async deleteById(id: string) {
-    if (!ObjectId.isValid(id)) {
+    if (!Types.ObjectId.isValid(id)) {
       return false;
     }
-    const result = await posts.deleteOne({ _id: new ObjectId(id) });
+    const result = await PostModel.deleteOne({ _id: new Types.ObjectId(id) });
     return result.deletedCount === 1;
   },
   async updateById(id: string, post: Post) {
-    if (!ObjectId.isValid(id)) {
+    if (!Types.ObjectId.isValid(id)) {
       return false;
     }
-    const result = await posts.updateOne(
-      { _id: new ObjectId(id) },
+    const result = await PostModel.updateOne(
+      { _id: new Types.ObjectId(id) },
       { $set: post }
     );
     return result.matchedCount === 1;
   },
   async deleteAll() {
-    await posts.drop();
+    await PostModel.deleteMany({});
   },
 };

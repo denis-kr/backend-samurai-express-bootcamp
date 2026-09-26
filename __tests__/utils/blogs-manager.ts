@@ -1,5 +1,5 @@
 import request from "supertest";
-import type { Blog } from "../../src/repositories/blogs-repo.js";
+import type { Blog } from "../../src/repositories/models/blog-model.js";
 import { app } from "../../src/setting.js";
 
 export const blogsTestManager: any = {

@@ -1,6 +1,7 @@
 import { add } from "date-fns/add";
 import { usersRepository } from "../repositories/users-repo.js";
 import type { FindAllUsersParams } from "../repositories/users-repo.js";
+import type { User } from "../repositories/models/user-model.js";
 import bcrypt from "bcrypt";
 import { emailManager } from "../manager/email-manager.js";
 
@@ -27,14 +28,12 @@ export const usersService = {
       passwordSalt,
     );
 
-    const newUser = {
-      accountData: {
-        userName: login,
-        email,
-        passwordHash,
-        passwordSalt,
-        createdAt: new Date(),
-      },
+    const newUser: User = {
+      userName: login,
+      email,
+      passwordHash,
+      passwordSalt,
+      createdAt: new Date(),
       emailConfirmation: {
         confirmationCode: crypto.randomUUID(),
         expirationDate: add(new Date(), { days: 1 }),

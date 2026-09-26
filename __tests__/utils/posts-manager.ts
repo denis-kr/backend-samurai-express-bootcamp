@@ -1,6 +1,6 @@
 import request from "supertest";
 import { app } from "../../src/setting.js";
-import type { Post } from "../../src/repositories/posts-repo.js";
+import type { Post } from "../../src/repositories/models/post-model.js";
 
 export const postsTestManager: any = {
   async getPosts(

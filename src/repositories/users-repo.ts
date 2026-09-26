@@ -1,11 +1,6 @@
-import { users } from "./db.js";
-import { ObjectId } from "mongodb";
-
-export type User = {
-  login: string;
-  email: string;
-  createdAt: Date;
-};
+import { Types } from "mongoose";
+import { UserModel } from "./models/user-model.js";
+import type { User } from "./models/user-model.js";
 
 export type FindAllUsersParams = {
   pageSize: number;
@@ -22,16 +17,15 @@ const sortFieldMap: Record<string, string> = {
 };
 
 export const usersRepository = {
-  //TODO fix type any
-  async create(user: any) {
-    const result = await users.insertOne(user);
-    return result.insertedId?.toString();
+  async create(user: User) {
+    const result = await UserModel.create(user);
+    return result._id.toString();
   },
   async findById(id: string) {
-    if (!ObjectId.isValid(id)) {
+    if (!Types.ObjectId.isValid(id)) {
       return null;
     }
-    return users.findOne({ _id: new ObjectId(id) });
+    return UserModel.findById(id).lean();
   },
   async getTotalCount(fields?: {
     searchLoginTerm?: string | null;
@@ -49,13 +43,13 @@ export const usersRepository = {
       });
     }
     const query = searchFilters.length ? { $or: searchFilters } : {};
-    return users.countDocuments(query);
+    return UserModel.countDocuments(query);
   },
   async findByLogin(login: string) {
-    return users.findOne({ userName: login });
+    return UserModel.findOne({ userName: login }).lean();
   },
   async findByEmail(email: string) {
-    return users.findOne({ email });
+    return UserModel.findOne({ email }).lean();
   },
   findAll({
     pageSize,
@@ -83,28 +77,30 @@ export const usersRepository = {
     }
     const query = searchFilters.length ? { $or: searchFilters } : {};
 
-    return users.find(query).sort(sort).skip(skip).limit(limit).toArray();
+    return UserModel.find(query).sort(sort).skip(skip).limit(limit).lean();
   },
   async deleteById(id: string) {
-    if (!ObjectId.isValid(id)) {
+    if (!Types.ObjectId.isValid(id)) {
       return false;
     }
-    const result = await users.deleteOne({ _id: new ObjectId(id) });
+    const result = await UserModel.deleteOne({ _id: new Types.ObjectId(id) });
     return result.deletedCount === 1;
   },
   async deleteAll() {
-    await users.drop();
+    await UserModel.deleteMany({});
   },
 
   async findByConfirmationCode(code: string) {
-    return users.findOne({ "emailConfirmation.confirmationCode": code });
+    return UserModel.findOne({
+      "emailConfirmation.confirmationCode": code,
+    }).lean();
   },
   async updateConfirmationStatus(id: string, isConfirmed: boolean) {
-    if (!ObjectId.isValid(id)) {
+    if (!Types.ObjectId.isValid(id)) {
       return false;
     }
-    const result = await users.updateOne(
-      { _id: new ObjectId(id) },
+    const result = await UserModel.updateOne(
+      { _id: new Types.ObjectId(id) },
       { $set: { "emailConfirmation.isConfirmed": isConfirmed } },
     );
     return result.modifiedCount === 1;
