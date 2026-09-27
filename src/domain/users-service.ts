@@ -1,26 +1,32 @@
 import { add } from "date-fns/add";
-import { usersRepository } from "../repositories/users-repo.js";
+import { inject, injectable } from "inversify";
+import { UsersRepository } from "../repositories/users-repo.js";
 import type { FindAllUsersParams } from "../repositories/users-repo.js";
 import type { User } from "../repositories/models/user-model.js";
 import bcrypt from "bcrypt";
 import { emailManager } from "../manager/email-manager.js";
 
-export const usersService = {
+@injectable()
+export class UsersService {
+  constructor(
+    @inject(UsersRepository) private readonly usersRepository: UsersRepository,
+  ) {}
+
   async findAllUsers(params: FindAllUsersParams) {
-    const totalCount = await usersRepository.getTotalCount({
+    const totalCount = await this.usersRepository.getTotalCount({
       searchLoginTerm: params.searchLoginTerm,
       searchEmailTerm: params.searchEmailTerm,
     });
-    const items = await usersRepository.findAll(params);
+    const items = await this.usersRepository.findAll(params);
 
     return { items, totalCount };
-  },
+  }
   async findUserById(id: string) {
-    return usersRepository.findById(id);
-  },
+    return this.usersRepository.findById(id);
+  }
   async deleteUserById(id: string) {
-    return usersRepository.deleteById(id);
-  },
+    return this.usersRepository.deleteById(id);
+  }
   async addNewUser(login: string, password: string, email: string) {
     const passwordSalt = await bcrypt.genSalt(10);
     const passwordHash = await this._generatePasswordHash(
@@ -41,7 +47,7 @@ export const usersService = {
       },
     };
 
-    const createResult = await usersRepository.create(newUser);
+    const createResult = await this.usersRepository.create(newUser);
 
     try {
       await emailManager.sendConfirmationEmail(
@@ -50,14 +56,14 @@ export const usersService = {
       );
     } catch (error) {
       console.log(error);
-      await usersRepository.deleteById(createResult);
+      await this.usersRepository.deleteById(createResult);
       return null;
     }
 
     return createResult;
-  },
+  }
   async resendConfirmationEmail(email: string) {
-    const user = await usersRepository.findByEmail(email);
+    const user = await this.usersRepository.findByEmail(email);
 
     if (!user) {
       return false;
@@ -77,9 +83,9 @@ export const usersService = {
       console.log(error);
       return false;
     }
-  },
+  }
   async confirmEmail(code: string) {
-    const user = await usersRepository.findByConfirmationCode(code);
+    const user = await this.usersRepository.findByConfirmationCode(code);
 
     if (!user) {
       return false;
@@ -93,21 +99,21 @@ export const usersService = {
       user.emailConfirmation.confirmationCode === code ||
       user.emailConfirmation.expirationDate > new Date()
     ) {
-      const result = await usersRepository.updateConfirmationStatus(
+      const result = await this.usersRepository.updateConfirmationStatus(
         user._id.toString(),
         true,
       );
       return result;
     }
     return false;
-  },
+  }
   async _generatePasswordHash(password: string, passwordSalt: string) {
     return bcrypt.hash(password, passwordSalt);
-  },
+  }
   async checkCredentials(loginOrEmail: string, password: string) {
     const user =
-      (await usersRepository.findByLogin(loginOrEmail)) ||
-      (await usersRepository.findByEmail(loginOrEmail));
+      (await this.usersRepository.findByLogin(loginOrEmail)) ||
+      (await this.usersRepository.findByEmail(loginOrEmail));
 
     if (!user) {
       return false;
@@ -126,5 +132,5 @@ export const usersService = {
       return user;
     }
     return false;
-  },
-};
+  }
+}

@@ -1,3 +1,4 @@
+import { injectable } from "inversify";
 import { Types } from "mongoose";
 import { CommentModel } from "./models/comment-model.js";
 import type { Comment } from "./models/comment-model.js";
@@ -10,20 +11,21 @@ export type FindAllCommentsParams = {
   sortDirection: "asc" | "desc";
 };
 
-export const commentsRepository = {
+@injectable()
+export class CommentsRepository {
   async create(comment: Comment) {
     const result = await CommentModel.create(comment);
     return result._id.toString();
-  },
+  }
   async findById(id: string) {
     if (!Types.ObjectId.isValid(id)) {
       return null;
     }
     return CommentModel.findById(id).lean();
-  },
+  }
   async getTotalCount(postId: string) {
     return CommentModel.countDocuments({ postId });
-  },
+  }
   async findAllByPostId({
     postId,
     pageSize,
@@ -42,7 +44,7 @@ export const commentsRepository = {
       .skip(skip)
       .limit(limit)
       .lean();
-  },
+  }
   async updateById(id: string, content: string) {
     if (!Types.ObjectId.isValid(id)) {
       return false;
@@ -52,15 +54,15 @@ export const commentsRepository = {
       { $set: { content } },
     );
     return result.matchedCount === 1;
-  },
+  }
   async deleteById(id: string) {
     if (!Types.ObjectId.isValid(id)) {
       return false;
     }
     const result = await CommentModel.deleteOne({ _id: new Types.ObjectId(id) });
     return result.deletedCount === 1;
-  },
+  }
   async deleteAll() {
     await CommentModel.deleteMany({});
-  },
-};
+  }
+}

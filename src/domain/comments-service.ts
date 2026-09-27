@@ -1,11 +1,19 @@
-import { commentsRepository } from "../repositories/comments-repo.js";
+import { inject, injectable } from "inversify";
+import { CommentsRepository } from "../repositories/comments-repo.js";
 import type { FindAllCommentsParams } from "../repositories/comments-repo.js";
 import type { Comment } from "../repositories/models/comment-model.js";
-import { usersRepository } from "../repositories/users-repo.js";
+import { UsersRepository } from "../repositories/users-repo.js";
 
-export const commentsService = {
+@injectable()
+export class CommentsService {
+  constructor(
+    @inject(CommentsRepository)
+    private readonly commentsRepository: CommentsRepository,
+    @inject(UsersRepository) private readonly usersRepository: UsersRepository,
+  ) {}
+
   async createComment(postId: string, userId: string, content: string) {
-    const user = await usersRepository.findById(userId);
+    const user = await this.usersRepository.findById(userId);
     if (!user) {
       return null;
     }
@@ -20,21 +28,23 @@ export const commentsService = {
       createdAt: new Date(),
     };
 
-    return commentsRepository.create(newComment);
-  },
-  findCommentById: (id: string) => {
-    return commentsRepository.findById(id);
-  },
+    return this.commentsRepository.create(newComment);
+  }
+  findCommentById(id: string) {
+    return this.commentsRepository.findById(id);
+  }
   async findAllCommentsByPostId(params: FindAllCommentsParams) {
-    const items = await commentsRepository.findAllByPostId(params);
-    const totalCount = await commentsRepository.getTotalCount(params.postId);
+    const items = await this.commentsRepository.findAllByPostId(params);
+    const totalCount = await this.commentsRepository.getTotalCount(
+      params.postId,
+    );
 
     return { items, totalCount };
-  },
+  }
   updateComment(id: string, content: string) {
-    return commentsRepository.updateById(id, content);
-  },
+    return this.commentsRepository.updateById(id, content);
+  }
   deleteCommentById(id: string) {
-    return commentsRepository.deleteById(id);
-  },
-};
+    return this.commentsRepository.deleteById(id);
+  }
+}

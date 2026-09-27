@@ -1,26 +1,32 @@
-import { postsRepository } from "../repositories/posts-repo.js";
+import { inject, injectable } from "inversify";
+import { PostsRepository } from "../repositories/posts-repo.js";
 import type { FindAllPostsParams } from "../repositories/posts-repo.js";
 import type { Post } from "../repositories/models/post-model.js";
 
-export const postsService = {
-  findAllPosts: async (params: FindAllPostsParams) => {
-    const posts = await postsRepository.findAll(params);
+@injectable()
+export class PostsService {
+  constructor(
+    @inject(PostsRepository) private readonly postsRepository: PostsRepository,
+  ) {}
 
-    const totalCount = await postsRepository.getTotalCount();
+  async findAllPosts(params: FindAllPostsParams) {
+    const posts = await this.postsRepository.findAll(params);
+
+    const totalCount = await this.postsRepository.getTotalCount();
 
     return { items: posts, totalCount };
-  },
-  findPostById: (id: string) => {
-    return postsRepository.findById(id);
-  },
-  deletePostById: (id: string) => {
-    return postsRepository.deleteById(id);
-  },
-  createPost: (post: Post) => {
+  }
+  findPostById(id: string) {
+    return this.postsRepository.findById(id);
+  }
+  deletePostById(id: string) {
+    return this.postsRepository.deleteById(id);
+  }
+  createPost(post: Post) {
     const newPost = { ...post, createdAt: new Date() };
-    return postsRepository.create(newPost);
-  },
+    return this.postsRepository.create(newPost);
+  }
   updatePost(id: string, post: Post) {
-    return postsRepository.updateById(id, post);
-  },
-};
+    return this.postsRepository.updateById(id, post);
+  }
+}

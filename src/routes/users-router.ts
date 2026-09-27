@@ -1,4 +1,5 @@
 import express, { Router, type Response } from "express";
+import { inject, injectable } from "inversify";
 import {
   paginationValidationMiddleware,
   sendErrorsIfAnyMiddleware,
@@ -8,19 +9,35 @@ import type {
   RequestWithParams,
   RequestWithBody,
 } from "../utils/types.js";
-import { usersService } from "../domain/users-service.js";
+import { UsersService } from "../domain/users-service.js";
 import { createNewUserValidationMiddleware } from "../middleware/validation/validation-users.js";
 import { basicAuthMiddleware } from "../middleware/auth/basic.js";
 
-const router: Router = express.Router();
+@injectable()
+export class UsersRouter {
+  readonly router: Router = express.Router();
 
-router.use(basicAuthMiddleware);
+  constructor(
+    @inject(UsersService) private readonly usersService: UsersService,
+  ) {
+    this.router.use(basicAuthMiddleware);
 
-router.get(
-  "/",
-  paginationValidationMiddleware,
-  sendErrorsIfAnyMiddleware,
-  async (
+    this.router.get(
+      "/",
+      paginationValidationMiddleware,
+      sendErrorsIfAnyMiddleware,
+      this.getUsers.bind(this),
+    );
+    this.router.post(
+      "/",
+      createNewUserValidationMiddleware,
+      sendErrorsIfAnyMiddleware,
+      this.createUser.bind(this),
+    );
+    this.router.delete("/:id", this.deleteUser.bind(this));
+  }
+
+  async getUsers(
     req: RequestWithQuery<{
       pageSize?: number;
       pageNumber?: number;
@@ -30,7 +47,7 @@ router.get(
       searchEmailTerm?: string;
     }>,
     res: Response,
-  ) => {
+  ) {
     const {
       pageSize: pageSizeQuery = 10,
       pageNumber: pageNumberQuery = 1,
@@ -42,7 +59,7 @@ router.get(
     const pageSize = Number(pageSizeQuery) || 10;
     const pageNumber = Number(pageNumberQuery) || 1;
 
-    const users = await usersService.findAllUsers({
+    const users = await this.usersService.findAllUsers({
       pageSize,
       pageNumber,
       searchLoginTerm,
@@ -65,21 +82,23 @@ router.get(
         _id: undefined,
       })),
     });
-  },
-);
+  }
 
-router.post(
-  "/",
-  createNewUserValidationMiddleware,
-  sendErrorsIfAnyMiddleware,
-  async (
+  async createUser(
     req: RequestWithBody<{ login: string; password: string; email: string }>,
     res: Response,
-  ) => {
+  ) {
     const { login, password, email } = req.body;
-    const newUserId = await usersService.addNewUser(login, password, email);
+    const newUserId = await this.usersService.addNewUser(
+      login,
+      password,
+      email,
+    );
+    if (!newUserId) {
+      return res.sendStatus(500);
+    }
 
-    const newUser = await usersService.findUserById(newUserId);
+    const newUser = await this.usersService.findUserById(newUserId);
     if (!newUser) {
       return res.sendStatus(500);
     }
@@ -91,25 +110,20 @@ router.post(
       id: newUser._id.toString(),
       _id: undefined,
     });
-  },
-);
+  }
 
-router.delete(
-  "/:id",
-  async (req: RequestWithParams<{ id: string }>, res: Response) => {
+  async deleteUser(req: RequestWithParams<{ id: string }>, res: Response) {
     const { id } = req.params;
 
-    const user = await usersService.findUserById(id);
+    const user = await this.usersService.findUserById(id);
     if (!user) {
       return res.sendStatus(404);
     }
 
-    const isDeleted = await usersService.deleteUserById(id);
+    const isDeleted = await this.usersService.deleteUserById(id);
     if (isDeleted) {
       return res.sendStatus(204);
     }
     return res.sendStatus(500);
-  },
-);
-
-export default router;
+  }
+}

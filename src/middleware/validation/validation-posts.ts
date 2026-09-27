@@ -1,5 +1,6 @@
 import { body } from "express-validator";
-import { blogsRepository } from "../../repositories/blogs-repo.js";
+import { container } from "../../composition-root.js";
+import { BlogsRepository } from "../../repositories/blogs-repo.js";
 
 const shortDescription = body("shortDescription")
   .trim()
@@ -39,7 +40,7 @@ export const createUpdateBodyValidationMiddleware = [
     .isString()
     .withMessage("Blog ID must be a string")
     .custom(async (value, { req }) => {
-      const blog = await blogsRepository.findById(value);
+      const blog = await container.get(BlogsRepository).findById(value);
 
       if (!blog) {
         throw new Error("Invalid blog Id");

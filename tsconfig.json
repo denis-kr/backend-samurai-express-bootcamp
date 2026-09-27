@@ -29,6 +29,9 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noImplicitAny": true,
+
+    // Required by inversify decorators (@injectable / @inject)
+    "experimentalDecorators": true,
     // "noFallthroughCasesInSwitch": true,
     // "noPropertyAccessFromIndexSignature": true,
 

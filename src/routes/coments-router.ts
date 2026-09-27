@@ -1,19 +1,36 @@
 import express, { Router, type Response } from "express";
+import { inject, injectable } from "inversify";
 import { commentsValidationMiddleware } from "../middleware/validation/validation-comments.js";
 import { sendErrorsIfAnyMiddleware } from "../middleware/validation/validation-universal.js";
 import { authMiddleware } from "../middleware/auth/auth-middleware.js";
-import { commentsService } from "../domain/comments-service.js";
+import { CommentsService } from "../domain/comments-service.js";
 import type {
   RequestWithParams,
   RequestWithParamsAndBody,
 } from "../utils/types.js";
 
-const router: Router = express.Router();
+@injectable()
+export class CommentsRouter {
+  readonly router: Router = express.Router();
 
-router.get(
-  "/:id",
-  async (req: RequestWithParams<{ id: string }>, res: Response) => {
-    const comment = await commentsService.findCommentById(req.params.id);
+  constructor(
+    @inject(CommentsService) private readonly commentsService: CommentsService,
+  ) {
+    this.router.get("/:id", this.getCommentById.bind(this));
+
+    this.router.use(authMiddleware);
+
+    this.router.put(
+      "/:commentId",
+      commentsValidationMiddleware,
+      sendErrorsIfAnyMiddleware,
+      this.updateComment.bind(this),
+    );
+    this.router.delete("/:commentId", this.deleteComment.bind(this));
+  }
+
+  async getCommentById(req: RequestWithParams<{ id: string }>, res: Response) {
+    const comment = await this.commentsService.findCommentById(req.params.id);
     if (!comment) {
       return res.sendStatus(404);
     }
@@ -24,23 +41,16 @@ router.get(
       commentatorInfo: comment.commentatorInfo,
       createdAt: comment.createdAt,
     });
-  },
-);
+  }
 
-router.use(authMiddleware);
-
-router.put(
-  "/:commentId",
-  commentsValidationMiddleware,
-  sendErrorsIfAnyMiddleware,
-  async (
+  async updateComment(
     req: RequestWithParamsAndBody<{ commentId: string }, { content: string }>,
     res: Response,
-  ) => {
+  ) {
     const { commentId } = req.params;
     const { content } = req.body;
 
-    const comment = await commentsService.findCommentById(commentId);
+    const comment = await this.commentsService.findCommentById(commentId);
     if (!comment) {
       return res.sendStatus(404);
     }
@@ -49,21 +59,24 @@ router.put(
       return res.sendStatus(403);
     }
 
-    const isUpdated = await commentsService.updateComment(commentId, content);
+    const isUpdated = await this.commentsService.updateComment(
+      commentId,
+      content,
+    );
     if (isUpdated) {
       return res.sendStatus(204);
     } else {
       return res.sendStatus(404);
     }
-  },
-);
+  }
 
-router.delete(
-  "/:commentId",
-  async (req: RequestWithParams<{ commentId: string }>, res: Response) => {
+  async deleteComment(
+    req: RequestWithParams<{ commentId: string }>,
+    res: Response,
+  ) {
     const { commentId } = req.params;
 
-    const comment = await commentsService.findCommentById(commentId);
+    const comment = await this.commentsService.findCommentById(commentId);
     if (!comment) {
       return res.sendStatus(404);
     }
@@ -72,13 +85,11 @@ router.delete(
       return res.sendStatus(403);
     }
 
-    const isDeleted = await commentsService.deleteCommentById(commentId);
+    const isDeleted = await this.commentsService.deleteCommentById(commentId);
     if (isDeleted) {
       return res.sendStatus(204);
     } else {
       return res.sendStatus(404);
     }
-  },
-);
-
-export default router;
+  }
+}

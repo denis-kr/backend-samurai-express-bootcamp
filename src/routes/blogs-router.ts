@@ -1,5 +1,6 @@
 import express, { Router, type Response } from "express";
-import { blogsService } from "../domain/blogs-service.js";
+import { inject, injectable } from "inversify";
+import { BlogsService } from "../domain/blogs-service.js";
 import {
   createUpdateBodyValidationMiddleware,
   blogIdValidationMiddleware,
@@ -18,17 +19,63 @@ import type {
   RequestWithParamsAndQuery,
 } from "../utils/types.js";
 import type { Blog } from "../repositories/models/blog-model.js";
-import { postsService } from "../domain/posts-service.js";
+import { PostsService } from "../domain/posts-service.js";
 import { createNewPostForBlogValidationMiddleware } from "../middleware/validation/validation-posts.js";
 
-const router: Router = express.Router();
+@injectable()
+export class BlogsRouter {
+  readonly router: Router = express.Router();
 
-// get all blogs
-router.get(
-  "/",
-  paginationValidationMiddleware,
-  sendErrorsIfAnyMiddleware,
-  async (
+  constructor(
+    @inject(BlogsService) private readonly blogsService: BlogsService,
+    @inject(PostsService) private readonly postsService: PostsService,
+  ) {
+    this.router.get(
+      "/",
+      paginationValidationMiddleware,
+      sendErrorsIfAnyMiddleware,
+      this.getBlogs.bind(this),
+    );
+    this.router.get(
+      "/:id",
+      idValidationMiddleware,
+      sendErrorsIfAnyMiddleware,
+      this.getBlogById.bind(this),
+    );
+    this.router.get(
+      "/:blogId/posts",
+      blogIdValidationMiddleware,
+      paginationValidationMiddleware,
+      sendErrorsIfAnyMiddleware,
+      this.getPostsByBlogId.bind(this),
+    );
+
+    this.router.use(basicAuthMiddleware);
+
+    this.router.post(
+      "/:blogId/posts",
+      blogIdValidationMiddleware,
+      createNewPostForBlogValidationMiddleware,
+      sendErrorsIfAnyMiddleware,
+      this.createPostForBlog.bind(this),
+    );
+    this.router.post(
+      "/",
+      createUpdateBodyValidationMiddleware,
+      sendErrorsIfAnyMiddleware,
+      this.createBlog.bind(this),
+    );
+    this.router.put(
+      "/:id",
+      createUpdateBodyValidationMiddleware,
+      sendErrorsIfAnyMiddleware,
+      this.updateBlog.bind(this),
+    );
+    this.router.delete("/:id", this.deleteBlog.bind(this));
+  }
+
+  // get all blogs
+  async getBlogs(
     req: RequestWithQuery<{
       pageSize?: number;
       pageNumber?: number;
@@ -36,8 +83,8 @@ router.get(
       sortDirection?: "asc" | "desc";
       searchNameTerm?: string;
     }>,
-    res: Response
-  ) => {
+    res: Response,
+  ) {
     const {
       pageSize: pageSizeQuery = 10,
       pageNumber: pageNumberQuery = 1,
@@ -47,7 +94,7 @@ router.get(
     } = req.query;
     const pageSize = Number(pageSizeQuery) || 10;
     const pageNumber = Number(pageNumberQuery) || 1;
-    const blogs = await blogsService.findAllBlogs({
+    const blogs = await this.blogsService.findAllBlogs({
       pageSize,
       pageNumber,
       searchNameTerm,
@@ -69,33 +116,22 @@ router.get(
       })),
     });
   }
-);
 
-// get blog by id
-router.get(
-  "/:id",
-  idValidationMiddleware,
-  sendErrorsIfAnyMiddleware,
-  async (req: RequestWithParams<{ id: string }>, res: Response) => {
+  // get blog by id
+  async getBlogById(req: RequestWithParams<{ id: string }>, res: Response) {
     const id = req.params.id;
-    const blog = await blogsService.findBlogById(id);
+    const blog = await this.blogsService.findBlogById(id);
     if (blog) {
       return res
         .status(200)
         .json({ ...blog, id: blog._id.toString(), _id: undefined });
     } else {
-      res.sendStatus(404);
+      return res.sendStatus(404);
     }
   }
-);
 
-//Returns all posts for specified blog
-router.get(
-  "/:blogId/posts",
-  blogIdValidationMiddleware,
-  paginationValidationMiddleware,
-  sendErrorsIfAnyMiddleware,
-  async (
+  //Returns all posts for specified blog
+  async getPostsByBlogId(
     req: RequestWithParamsAndQuery<
       { blogId: string },
       {
@@ -105,8 +141,8 @@ router.get(
         sortDirection?: "asc" | "desc";
       }
     >,
-    res: Response
-  ) => {
+    res: Response,
+  ) {
     const blogId = req.params.blogId;
     const {
       pageSize: pageSizeQuery = 10,
@@ -117,11 +153,11 @@ router.get(
     const pageSize = Number(pageSizeQuery) || 10;
     const pageNumber = Number(pageNumberQuery) || 1;
 
-    const blog = await blogsService.findBlogById(blogId);
+    const blog = await this.blogsService.findBlogById(blogId);
     if (!blog) {
       return res.sendStatus(404);
     }
-    const posts = await blogsService.findPostsByBlogId({
+    const posts = await this.blogsService.findPostsByBlogId({
       pageSize,
       pageNumber,
       sortBy,
@@ -142,32 +178,24 @@ router.get(
       })),
     });
   }
-);
 
-router.use(basicAuthMiddleware);
-
-//Create new post for specified blog
-router.post(
-  "/:blogId/posts",
-  blogIdValidationMiddleware,
-  createNewPostForBlogValidationMiddleware,
-  sendErrorsIfAnyMiddleware,
-  async (
+  //Create new post for specified blog
+  async createPostForBlog(
     req: RequestWithParamsAndBody<
       { blogId: string },
       { title: string; shortDescription: string; content: string }
     >,
-    res: Response
-  ) => {
+    res: Response,
+  ) {
     const blogId = req.params.blogId;
     const { title, shortDescription, content } = req.body;
 
-    const blog = await blogsService.findBlogById(blogId);
+    const blog = await this.blogsService.findBlogById(blogId);
     if (!blog) {
       return res.sendStatus(404);
     }
 
-    const newPostId = await postsService.createPost({
+    const newPostId = await this.postsService.createPost({
       title,
       shortDescription,
       content,
@@ -175,7 +203,7 @@ router.post(
       blogName: blog.name,
     });
 
-    const newPost = await postsService.findPostById(newPostId);
+    const newPost = await this.postsService.findPostById(newPostId);
     if (newPost) {
       return res
         .status(201)
@@ -183,21 +211,16 @@ router.post(
     }
     return res.sendStatus(500);
   }
-);
 
-//add new blog
-router.post(
-  "/",
-  createUpdateBodyValidationMiddleware,
-  sendErrorsIfAnyMiddleware,
-  async (
+  //add new blog
+  async createBlog(
     req: RequestWithBody<{
       name: string;
       description: string;
       websiteUrl: string;
     }>,
-    res: Response
-  ) => {
+    res: Response,
+  ) {
     const { name, description, websiteUrl } = req.body;
 
     const blog: Omit<Blog, "createdAt" | "isMembership"> = {
@@ -205,9 +228,9 @@ router.post(
       description,
       websiteUrl,
     };
-    const createdId = await blogsService.createBlog(blog);
+    const createdId = await this.blogsService.createBlog(blog);
 
-    const createdBlog = await blogsService.findBlogById(createdId);
+    const createdBlog = await this.blogsService.findBlogById(createdId);
 
     if (!createdBlog) return res.sendStatus(500);
 
@@ -215,24 +238,19 @@ router.post(
       .status(201)
       .json({ ...createdBlog, id: createdBlog._id.toString(), _id: undefined });
   }
-);
 
-//update blog by id
-router.put(
-  "/:id",
-  createUpdateBodyValidationMiddleware,
-  sendErrorsIfAnyMiddleware,
-  async (
+  //update blog by id
+  async updateBlog(
     req: RequestWithParamsAndBody<
       { id: string },
       { name: string; description: string; websiteUrl: string }
     >,
-    res: Response
-  ) => {
+    res: Response,
+  ) {
     const id = req.params.id;
     const { name, description, websiteUrl } = req.body;
 
-    const isUpdated = await blogsService.updateBlog(id, {
+    const isUpdated = await this.blogsService.updateBlog(id, {
       name,
       description,
       websiteUrl,
@@ -244,22 +262,20 @@ router.put(
       return res.sendStatus(404);
     }
   }
-);
 
-// Delete blog by id
-router.delete("/:id", async (req, res) => {
-  const id = req.params.id;
-  const blog = await blogsService.findBlogById(id);
-  if (!blog) {
-    return res.sendStatus(404);
+  // Delete blog by id
+  async deleteBlog(req: RequestWithParams<{ id: string }>, res: Response) {
+    const id = req.params.id;
+    const blog = await this.blogsService.findBlogById(id);
+    if (!blog) {
+      return res.sendStatus(404);
+    }
+
+    const isDeleted = await this.blogsService.deleteBlogById(id);
+    if (isDeleted) {
+      return res.sendStatus(204);
+    } else {
+      return res.sendStatus(500);
+    }
   }
-
-  const isDeleted = await blogsService.deleteBlogById(id);
-  if (isDeleted) {
-    return res.sendStatus(204);
-  } else {
-    return res.sendStatus(500);
-  }
-});
-
-export default router;
+}

@@ -1,4 +1,5 @@
-import { usersRepository } from "./../../repositories/users-repo.js";
+import { container } from "../../composition-root.js";
+import { UsersRepository } from "../../repositories/users-repo.js";
 import { body } from "express-validator";
 
 export const login = body("login")
@@ -13,7 +14,7 @@ export const login = body("login")
     "Login must contain only letters, numbers, underscores, and hyphens",
   )
   .custom(async (value) => {
-    const user = await usersRepository.findByLogin(value);
+    const user = await container.get(UsersRepository).findByLogin(value);
 
     if (user) {
       throw new Error("Login must be unique");
@@ -28,7 +29,7 @@ export const email = body("email")
   .matches(/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/)
   .withMessage("Email must be a valid email address")
   .custom(async (value) => {
-    const user = await usersRepository.findByEmail(value);
+    const user = await container.get(UsersRepository).findByEmail(value);
 
     if (user) {
       throw new Error("Email must be unique");

@@ -1,6 +1,7 @@
 import { body } from "express-validator";
 import { login, password, email } from "./validation-users.js";
-import { usersRepository } from "../../repositories/users-repo.js";
+import { container } from "../../composition-root.js";
+import { UsersRepository } from "../../repositories/users-repo.js";
 
 export const registrationValidationMiddleware = [login, password, email];
 
@@ -18,7 +19,7 @@ export const registrationEmailResendingValidationMiddleware = body("email")
   .matches(/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/)
   .withMessage("Email must be a valid email address")
   .custom(async (value) => {
-    const user = await usersRepository.findByEmail(value);
+    const user = await container.get(UsersRepository).findByEmail(value);
 
     if (!user) {
       throw new Error("User with this email does not exist");
