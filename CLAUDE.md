@@ -21,7 +21,8 @@ There is no lint/format tooling configured (see `TODO.txt` — ESLint setup was 
 - `PORT` (default 3000)
 - `MONGO_URI` (default `mongodb://localhost:27017`); the database name is pinned to `samurai` in `src/repositories/db.ts`, not taken from the URI
 - `JWT_SECRET` (falls back to an insecure default in `jwt-service.ts`)
-- `EMAIL` / `EMAIL_PASSWORD` for nodemailer (gmail) — transport auth is still a TODO in `email-adapter.ts`
+- `EMAIL` / `EMAIL_PASSWORD` for nodemailer (gmail app password), read in `email-adapter.ts`
+- Env vars are loaded from a git-ignored `.env` via `import "dotenv/config"` (first import in `src/index.ts`); `.env.example` lists them. `docker-compose.yml` passes `.env` to the app container via `env_file`.
 
 ## Architecture
 

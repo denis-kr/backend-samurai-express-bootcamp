@@ -10,6 +10,9 @@ services:
     depends_on:
       mongo:
         condition: service_healthy
+    env_file:
+      - path: .env
+        required: false
     restart: on-failure
 
   mongo:

@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { app } from "./setting.js";
 import { runDb } from "./repositories/db.js";
 

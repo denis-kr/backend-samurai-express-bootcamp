@@ -7,3 +7,23 @@ Authorization: Basic admin:qwerty
     "websiteUrl": "https://www.blog5.com",
     "name": "Blog 5"
 }
+
+### Create test user
+POST http://localhost:3000/users HTTP/1.1
+content-type: application/json
+Authorization: Basic admin:qwerty
+
+{
+    "login": "testuser1",
+    "password": "qwerty123",
+    "email": "kravchdennis1@gmail.com"
+}
+
+
+### Confirm registration (code from the confirmation email link: ...confirm-email?code=<code>)
+POST http://localhost:3000/auth/registration-confirmation HTTP/1.1
+content-type: application/json
+
+{
+    "code": "c31e6014-fa38-4896-8a98-8779b561fce5"
+}

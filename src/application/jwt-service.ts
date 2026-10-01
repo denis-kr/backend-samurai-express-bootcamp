@@ -1,11 +1,11 @@
 import jwt from "jsonwebtoken";
+import { Types } from "mongoose";
 
 const JWT_SECRET = process.env.JWT_SECRET || "default_secret_key";
 
 export const jwtService = {
-  //UserDBType todo add proper types
-  async createJWT(user: any) {
-    const token = jwt.sign({ userId: user._id }, JWT_SECRET, {
+  async createJWT(user: { _id: Types.ObjectId }) {
+    const token = jwt.sign({ userId: user._id.toString() }, JWT_SECRET, {
       expiresIn: "1h",
     });
     return token;

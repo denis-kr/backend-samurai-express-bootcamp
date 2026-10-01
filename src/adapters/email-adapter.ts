@@ -5,14 +5,13 @@ export const emailAdapter = {
     const transport = nodemailer.createTransport({
       service: "gmail",
       auth: {
-        //TODO
-        // user: process.env.EMAIL,
-        // pass: process.env.EMAIL_PASSWORD
+        user: process.env.EMAIL,
+        pass: process.env.EMAIL_PASSWORD,
       },
     });
 
     const info = await transport.sendMail({
-      from: process.env.EMAIL, //TODO
+      from: process.env.EMAIL,
       to: email,
       subject: subject,
       html: message,

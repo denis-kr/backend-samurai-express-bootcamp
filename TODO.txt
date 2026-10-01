@@ -1,7 +1,0 @@
-//TODO add git hook to run prettier, eslint/typescript, tests before commit to make sure everything is working
-
-//TODO do some more research about eslint, looks like it is not working correctly
-
-Or maybe actually dont even setup eslint
-
-It will probably be out of the box in nest.js
