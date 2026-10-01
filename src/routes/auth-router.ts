@@ -73,7 +73,7 @@ export class AuthRouter {
     const user = await this.usersService.addNewUser(login, password, email);
 
     if (user) {
-      res.status(201).send();
+      res.sendStatus(204);
     } else {
       res.sendStatus(400);
     }
@@ -107,7 +107,7 @@ export class AuthRouter {
 
     if (user) {
       const token = await jwtService.createJWT(user);
-      res.status(201).send({ accessToken: token });
+      res.status(200).send({ accessToken: token });
     } else {
       res.sendStatus(401);
     }

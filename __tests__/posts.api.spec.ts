@@ -39,7 +39,7 @@ describe("Posts", () => {
     });
     const loginResponse = await authTestManager.login(
       { loginOrEmail: data.login, password: data.password },
-      { expectedStatusCode: 201 },
+      { expectedStatusCode: 200 },
     );
     return {
       login: data.login,
