@@ -12,6 +12,7 @@ export const authTestManager: any = {
 
     if (response.statusCode === 200) {
       expect(response.body.accessToken).toBeDefined();
+      expect(authTestManager.getRefreshToken(response)).toBeDefined();
     }
 
     return response;
@@ -27,6 +28,59 @@ export const authTestManager: any = {
 
     if (authHeader) {
       requestObject.set("Authorization", authHeader);
+    }
+
+    const response = await requestObject;
+
+    expect(response.statusCode).toBe(expectedStatusCode);
+
+    return response;
+  },
+  // Returns the raw `refreshToken=...` Set-Cookie header, or undefined if none was set
+  getRefreshTokenCookie(response: { headers: Record<string, unknown> }) {
+    const cookies = (response.headers["set-cookie"] ?? []) as string[];
+    return cookies.find((c) => c.startsWith("refreshToken="));
+  },
+  // Extracts just the token value from the refreshToken Set-Cookie header
+  getRefreshToken(response: { headers: Record<string, unknown> }) {
+    const cookie = authTestManager.getRefreshTokenCookie(response);
+    return cookie?.split(";")[0]!.slice("refreshToken=".length) || undefined;
+  },
+  async refreshToken({
+    expectedStatusCode,
+    refreshToken,
+  }: {
+    expectedStatusCode: number;
+    refreshToken?: string;
+  }) {
+    const requestObject = request(app).post("/auth/refresh-token");
+
+    if (refreshToken !== undefined) {
+      requestObject.set("Cookie", `refreshToken=${refreshToken}`);
+    }
+
+    const response = await requestObject;
+
+    expect(response.statusCode).toBe(expectedStatusCode);
+
+    if (response.statusCode === 200) {
+      expect(response.body.accessToken).toBeDefined();
+      expect(authTestManager.getRefreshToken(response)).toBeDefined();
+    }
+
+    return response;
+  },
+  async logout({
+    expectedStatusCode,
+    refreshToken,
+  }: {
+    expectedStatusCode: number;
+    refreshToken?: string;
+  }) {
+    const requestObject = request(app).post("/auth/logout");
+
+    if (refreshToken !== undefined) {
+      requestObject.set("Cookie", `refreshToken=${refreshToken}`);
     }
 
     const response = await requestObject;

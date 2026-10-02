@@ -29,7 +29,60 @@ describe("Auth", () => {
     return data;
   };
 
+  // Access tokens live 10s and refresh tokens 20s; only Date is faked so the
+  // Mongo driver's real timers keep working while jwt.verify sees a later clock.
+  const advanceClockBySeconds = (seconds: number) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.now() + seconds * 1000);
+  };
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const loginAndGetTokens = async () => {
+    const user = await createTestUser();
+    const loginResponse = await authTestManager.login(
+      { loginOrEmail: user.login, password: user.password },
+      { expectedStatusCode: 200 },
+    );
+    return {
+      user,
+      accessToken: loginResponse.body.accessToken as string,
+      refreshToken: authTestManager.getRefreshToken(loginResponse) as string,
+    };
+  };
+
   describe("POST /auth/login", () => {
+    //POST /auth/login 200 sets refreshToken cookie
+    it("should set an httpOnly, secure refreshToken cookie on successful login", async () => {
+      const user = await createTestUser();
+
+      const response = await authTestManager.login(
+        { loginOrEmail: user.login, password: user.password },
+        { expectedStatusCode: 200 },
+      );
+
+      const cookie = authTestManager.getRefreshTokenCookie(response);
+      expect(cookie).toMatch(/HttpOnly/i);
+      expect(cookie).toMatch(/Secure/i);
+      expect(authTestManager.getRefreshToken(response)).not.toBe(
+        response.body.accessToken,
+      );
+    });
+
+    //POST /auth/login 401 no refreshToken cookie on failed login
+    it("should not set a refreshToken cookie if login fails", async () => {
+      const user = await createTestUser();
+
+      const response = await authTestManager.login(
+        { loginOrEmail: user.login, password: "wrongpassword" },
+        { expectedStatusCode: 401 },
+      );
+
+      expect(authTestManager.getRefreshTokenCookie(response)).toBeUndefined();
+    });
+
     //POST /auth/login 200 with login
     it("should return 200 and an accessToken when logging in with a valid login and password", async () => {
       const user = await createTestUser();
@@ -141,6 +194,28 @@ describe("Auth", () => {
       expect(response.body.userId).toBeDefined();
     });
 
+    //GET /auth/me 401 access token expired
+    it("should return 401 if the access token has expired (after 10s)", async () => {
+      const { accessToken } = await loginTestUser();
+
+      advanceClockBySeconds(11);
+
+      await authTestManager.me({
+        expectedStatusCode: 401,
+        authHeader: `Bearer ${accessToken}`,
+      });
+    });
+
+    //GET /auth/me 401 refresh token used as access token
+    it("should return 401 if a refresh token is sent as the Bearer token", async () => {
+      const { refreshToken } = await loginAndGetTokens();
+
+      await authTestManager.me({
+        expectedStatusCode: 401,
+        authHeader: `Bearer ${refreshToken}`,
+      });
+    });
+
     //GET /auth/me 401 no Authorization header
     it("should return 401 if no Authorization header is provided", async () => {
       await authTestManager.me({ expectedStatusCode: 401 });
@@ -181,6 +256,240 @@ describe("Auth", () => {
         expectedStatusCode: 401,
         authHeader: `Bearer ${loginResponse.body.accessToken}`,
       });
+    });
+  });
+
+  describe("POST /auth/refresh-token", () => {
+    //POST /auth/refresh-token 200
+    it("should return 200 with a new working accessToken and a new httpOnly, secure refreshToken cookie", async () => {
+      const { user, refreshToken } = await loginAndGetTokens();
+
+      const response = await authTestManager.refreshToken({
+        expectedStatusCode: 200,
+        refreshToken,
+      });
+
+      const newRefreshToken = authTestManager.getRefreshToken(response);
+      expect(newRefreshToken).not.toBe(refreshToken);
+      const cookie = authTestManager.getRefreshTokenCookie(response);
+      expect(cookie).toMatch(/HttpOnly/i);
+      expect(cookie).toMatch(/Secure/i);
+
+      const me = await authTestManager.me({
+        expectedStatusCode: 200,
+        authHeader: `Bearer ${response.body.accessToken}`,
+      });
+      expect(me.body.login).toBe(user.login);
+    });
+
+    //POST /auth/refresh-token 200 the rotated refresh token is itself usable
+    it("should accept the newly issued refresh token on the next refresh", async () => {
+      const { refreshToken } = await loginAndGetTokens();
+
+      const first = await authTestManager.refreshToken({
+        expectedStatusCode: 200,
+        refreshToken,
+      });
+
+      await authTestManager.refreshToken({
+        expectedStatusCode: 200,
+        refreshToken: authTestManager.getRefreshToken(first),
+      });
+    });
+
+    //POST /auth/refresh-token 401 old refresh token reused after rotation
+    it("should return 401 if a refresh token that was already used is sent again", async () => {
+      const { refreshToken } = await loginAndGetTokens();
+
+      await authTestManager.refreshToken({
+        expectedStatusCode: 200,
+        refreshToken,
+      });
+
+      await authTestManager.refreshToken({
+        expectedStatusCode: 401,
+        refreshToken,
+      });
+    });
+
+    //POST /auth/refresh-token 200/401 concurrent use of the same token
+    it("should let only one of two concurrent requests with the same refresh token succeed", async () => {
+      const { refreshToken } = await loginAndGetTokens();
+
+      const send = () =>
+        request(app)
+          .post("/auth/refresh-token")
+          .set("Cookie", `refreshToken=${refreshToken}`);
+      const statuses = (await Promise.all([send(), send()]))
+        .map((r) => r.statusCode)
+        .sort();
+
+      expect(statuses).toEqual([200, 401]);
+    });
+
+    //POST /auth/refresh-token 401 no cookie
+    it("should return 401 if no refreshToken cookie is sent", async () => {
+      await authTestManager.refreshToken({ expectedStatusCode: 401 });
+    });
+
+    //POST /auth/refresh-token 401 empty cookie
+    it("should return 401 if the refreshToken cookie is empty", async () => {
+      await authTestManager.refreshToken({
+        expectedStatusCode: 401,
+        refreshToken: "",
+      });
+    });
+
+    //POST /auth/refresh-token 401 malformed token
+    it("should return 401 if the refresh token is not a valid JWT", async () => {
+      await authTestManager.refreshToken({
+        expectedStatusCode: 401,
+        refreshToken: "invalid.token.value",
+      });
+    });
+
+    //POST /auth/refresh-token 401 access token sent as refresh token
+    it("should return 401 if an access token is sent as the refresh token", async () => {
+      const { accessToken } = await loginAndGetTokens();
+
+      await authTestManager.refreshToken({
+        expectedStatusCode: 401,
+        refreshToken: accessToken,
+      });
+    });
+
+    //POST /auth/refresh-token 401 refresh token expired
+    it("should return 401 if the refresh token has expired (after 20s)", async () => {
+      const { refreshToken } = await loginAndGetTokens();
+
+      advanceClockBySeconds(21);
+
+      await authTestManager.refreshToken({
+        expectedStatusCode: 401,
+        refreshToken,
+      });
+    });
+
+    //POST /auth/refresh-token 401 after logout
+    it("should return 401 if the refresh token was revoked by logout", async () => {
+      const { refreshToken } = await loginAndGetTokens();
+
+      await authTestManager.logout({ expectedStatusCode: 204, refreshToken });
+
+      await authTestManager.refreshToken({
+        expectedStatusCode: 401,
+        refreshToken,
+      });
+    });
+
+    //POST /auth/refresh-token 401 user deleted
+    it("should return 401 if the user referenced by the refresh token has been deleted", async () => {
+      const created = await usersTestManager.createUser(
+        { login: "to_delete", password: "password1", email: "to_delete@mail.com" },
+        { expectedStatusCode: 201, isAuthorized: true },
+      );
+      const loginResponse = await authTestManager.login(
+        { loginOrEmail: "to_delete", password: "password1" },
+        { expectedStatusCode: 200 },
+      );
+
+      await request(app)
+        .delete(`/users/${created.body.id}`)
+        .set("Authorization", "Basic YWRtaW46cXdlcnR5");
+
+      await authTestManager.refreshToken({
+        expectedStatusCode: 401,
+        refreshToken: authTestManager.getRefreshToken(loginResponse),
+      });
+    });
+
+    //POST /auth/refresh-token 200 sessions are independent
+    it("should not revoke a refresh token from another login when one is rotated", async () => {
+      const { user, refreshToken: firstSession } = await loginAndGetTokens();
+      const secondLogin = await authTestManager.login(
+        { loginOrEmail: user.login, password: user.password },
+        { expectedStatusCode: 200 },
+      );
+
+      await authTestManager.refreshToken({
+        expectedStatusCode: 200,
+        refreshToken: firstSession,
+      });
+
+      await authTestManager.refreshToken({
+        expectedStatusCode: 200,
+        refreshToken: authTestManager.getRefreshToken(secondLogin),
+      });
+    });
+  });
+
+  describe("POST /auth/logout", () => {
+    //POST /auth/logout 204
+    it("should return 204 and clear the refreshToken cookie", async () => {
+      const { refreshToken } = await loginAndGetTokens();
+
+      const response = await authTestManager.logout({
+        expectedStatusCode: 204,
+        refreshToken,
+      });
+
+      const cookie = authTestManager.getRefreshTokenCookie(response);
+      expect(cookie).toBeDefined();
+      expect(authTestManager.getRefreshToken(response)).toBeUndefined();
+      expect(cookie).toMatch(/Expires=Thu, 01 Jan 1970/);
+    });
+
+    //POST /auth/logout 401 logging out twice with the same token
+    it("should return 401 when logging out a second time with the same refresh token", async () => {
+      const { refreshToken } = await loginAndGetTokens();
+
+      await authTestManager.logout({ expectedStatusCode: 204, refreshToken });
+
+      await authTestManager.logout({ expectedStatusCode: 401, refreshToken });
+    });
+
+    //POST /auth/logout 401 refresh token already rotated
+    it("should return 401 if the refresh token was already used for a refresh", async () => {
+      const { refreshToken } = await loginAndGetTokens();
+
+      await authTestManager.refreshToken({
+        expectedStatusCode: 200,
+        refreshToken,
+      });
+
+      await authTestManager.logout({ expectedStatusCode: 401, refreshToken });
+    });
+
+    //POST /auth/logout 401 no cookie
+    it("should return 401 if no refreshToken cookie is sent", async () => {
+      await authTestManager.logout({ expectedStatusCode: 401 });
+    });
+
+    //POST /auth/logout 401 malformed token
+    it("should return 401 if the refresh token is not a valid JWT", async () => {
+      await authTestManager.logout({
+        expectedStatusCode: 401,
+        refreshToken: "invalid.token.value",
+      });
+    });
+
+    //POST /auth/logout 401 access token sent as refresh token
+    it("should return 401 if an access token is sent as the refresh token", async () => {
+      const { accessToken } = await loginAndGetTokens();
+
+      await authTestManager.logout({
+        expectedStatusCode: 401,
+        refreshToken: accessToken,
+      });
+    });
+
+    //POST /auth/logout 401 refresh token expired
+    it("should return 401 if the refresh token has expired (after 20s)", async () => {
+      const { refreshToken } = await loginAndGetTokens();
+
+      advanceClockBySeconds(21);
+
+      await authTestManager.logout({ expectedStatusCode: 401, refreshToken });
     });
   });
 

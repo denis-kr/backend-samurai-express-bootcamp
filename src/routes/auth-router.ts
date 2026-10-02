@@ -6,6 +6,7 @@ import type { RequestWithBody } from "../utils/types.js";
 import { UsersService } from "../domain/users-service.js";
 import { jwtService } from "../application/jwt-service.js";
 import { authMiddleware } from "../middleware/auth/auth-middleware.js";
+import { refreshTokenMiddleware } from "../middleware/auth/refresh-token-middleware.js";
 import {
   registrationConfirmationValidationMiddleware,
   registrationEmailResendingValidationMiddleware,
@@ -19,8 +20,12 @@ export class AuthRouter {
   constructor(
     @inject(UsersService) private readonly usersService: UsersService,
   ) {
-    this.router.post("/refresh-token", () => {});
-    this.router.post("/logout", () => {});
+    this.router.post(
+      "/refresh-token",
+      refreshTokenMiddleware,
+      this.refreshToken.bind(this),
+    );
+    this.router.post("/logout", refreshTokenMiddleware, this.logout.bind(this));
 
     this.router.post(
       "/registration-confirmation",
@@ -94,6 +99,37 @@ export class AuthRouter {
     }
   }
 
+  async refreshToken(req: Request, res: Response) {
+    const tokens = await this.usersService.refreshTokens(
+      req.userId!,
+      req.cookies.refreshToken,
+    );
+
+    if (!tokens) {
+      return res.sendStatus(401);
+    }
+
+    res.cookie("refreshToken", tokens.refreshToken, {
+      httpOnly: true,
+      secure: true,
+    });
+    return res.status(200).send({ accessToken: tokens.accessToken });
+  }
+
+  async logout(req: Request, res: Response) {
+    const isLoggedOut = await this.usersService.logout(
+      req.userId!,
+      req.cookies.refreshToken,
+    );
+
+    if (!isLoggedOut) {
+      return res.sendStatus(401);
+    }
+
+    res.clearCookie("refreshToken", { httpOnly: true, secure: true });
+    return res.sendStatus(204);
+  }
+
   async login(
     req: RequestWithBody<{ loginOrEmail: string; password: string }>,
     res: Response,
@@ -106,8 +142,14 @@ export class AuthRouter {
     );
 
     if (user) {
-      const token = await jwtService.createJWT(user);
-      res.status(200).send({ accessToken: token });
+      const refreshToken = await jwtService.createRefreshJWT(user);
+      const accessToken = await jwtService.createAccessJWT(user);
+
+      res.cookie("refreshToken", refreshToken, {
+        httpOnly: true,
+        secure: true,
+      });
+      res.status(200).send({ accessToken });
     } else {
       res.sendStatus(401);
     }

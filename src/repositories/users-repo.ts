@@ -107,4 +107,15 @@ export class UsersRepository {
     );
     return result.modifiedCount === 1;
   }
+  // Atomically marks the token as expired; returns false if it was already expired (or the user doesn't exist).
+  async expireRefreshToken(id: string, refreshToken: string) {
+    if (!Types.ObjectId.isValid(id)) {
+      return false;
+    }
+    const result = await UserModel.updateOne(
+      { _id: new Types.ObjectId(id), expiredRefreshTokens: { $ne: refreshToken } },
+      { $push: { expiredRefreshTokens: refreshToken } },
+    );
+    return result.modifiedCount === 1;
+  }
 }

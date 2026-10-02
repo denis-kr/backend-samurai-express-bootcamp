@@ -331,4 +331,71 @@ describe("Comments", () => {
       });
     });
   });
+
+  describe("PUT /comments/:commentId/like-status", () => {
+    //PUT /comments/:commentId/like-status 401 no Authorization header
+    it("should return 401 if no Authorization header is provided", async () => {
+      const post = await createTestPost();
+      const { accessToken } = await createTestUserAndLogin();
+      const created = await createTestComment(post.id, accessToken);
+
+      await commentsTestManager.updateLikeStatus(
+        created.id,
+        { likeStatus: "Like" },
+        { expectedStatusCode: 401 },
+      );
+    });
+
+    //PUT /comments/:commentId/like-status 401 invalid token
+    it("should return 401 if the token is invalid", async () => {
+      const post = await createTestPost();
+      const { accessToken } = await createTestUserAndLogin();
+      const created = await createTestComment(post.id, accessToken);
+
+      await commentsTestManager.updateLikeStatus(
+        created.id,
+        { likeStatus: "Like" },
+        { expectedStatusCode: 401, authHeader: "Bearer invalid.token.value" },
+      );
+    });
+
+    //PUT /comments/:commentId/like-status 400 likeStatus is missing
+    it("should return 400 if likeStatus is missing", async () => {
+      const post = await createTestPost();
+      const { accessToken } = await createTestUserAndLogin();
+      const created = await createTestComment(post.id, accessToken);
+
+      const response = await commentsTestManager.updateLikeStatus(
+        created.id,
+        {},
+        { expectedStatusCode: 400, authHeader: `Bearer ${accessToken}` },
+      );
+      expect(response.body.errorsMessages).toContainEqual(
+        expect.objectContaining({ field: "likeStatus" }),
+      );
+    });
+
+    //PUT /comments/:commentId/like-status 400 likeStatus not one of None/Like/Dislike
+    it("should return 400 if likeStatus is not one of None, Like, Dislike", async () => {
+      const post = await createTestPost();
+      const { accessToken } = await createTestUserAndLogin();
+      const created = await createTestComment(post.id, accessToken);
+
+      for (const likeStatus of ["like", "Love", "", 1]) {
+        const response = await commentsTestManager.updateLikeStatus(
+          created.id,
+          { likeStatus },
+          { expectedStatusCode: 400, authHeader: `Bearer ${accessToken}` },
+        );
+        expect(response.body.errorsMessages).toContainEqual(
+          expect.objectContaining({ field: "likeStatus" }),
+        );
+      }
+    });
+
+    // The handler is still an empty stub (never sends a response), so the
+    // happy path and not-found cases can't be exercised yet.
+    it.todo("PUT /comments/:commentId/like-status 204 sets Like/Dislike/None");
+    it.todo("PUT /comments/:commentId/like-status 404 comment does not exist");
+  });
 });

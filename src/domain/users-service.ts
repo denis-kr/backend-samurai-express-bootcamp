@@ -5,6 +5,7 @@ import type { FindAllUsersParams } from "../repositories/users-repo.js";
 import type { User } from "../repositories/models/user-model.js";
 import bcrypt from "bcrypt";
 import { emailManager } from "../manager/email-manager.js";
+import { jwtService } from "../application/jwt-service.js";
 
 @injectable()
 export class UsersService {
@@ -45,6 +46,7 @@ export class UsersService {
         expirationDate: add(new Date(), { days: 1 }),
         isConfirmed: false,
       },
+      expiredRefreshTokens: [],
     };
 
     const createResult = await this.usersRepository.create(newUser);
@@ -132,5 +134,31 @@ export class UsersService {
       return user;
     }
     return false;
+  }
+  // Token signature/expiry/revocation are checked by refreshTokenMiddleware; expiring it here
+  // is still atomic, so two concurrent requests with the same token can't both succeed.
+  async refreshTokens(userId: string, refreshToken: string) {
+    const user = await this.usersRepository.findById(userId);
+
+    if (!user) {
+      return null;
+    }
+
+    const isExpired = await this.usersRepository.expireRefreshToken(
+      userId,
+      refreshToken,
+    );
+
+    if (!isExpired) {
+      return null;
+    }
+
+    return {
+      accessToken: await jwtService.createAccessJWT(user),
+      refreshToken: await jwtService.createRefreshJWT(user),
+    };
+  }
+  async logout(userId: string, refreshToken: string) {
+    return this.usersRepository.expireRefreshToken(userId, refreshToken);
   }
 }

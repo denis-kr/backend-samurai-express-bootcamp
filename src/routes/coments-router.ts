@@ -1,6 +1,9 @@
 import express, { Router, type Response } from "express";
 import { inject, injectable } from "inversify";
-import { commentsValidationMiddleware } from "../middleware/validation/validation-comments.js";
+import {
+  commentsValidationMiddleware,
+  likeStatusValidationMiddleware,
+} from "../middleware/validation/validation-comments.js";
 import { sendErrorsIfAnyMiddleware } from "../middleware/validation/validation-universal.js";
 import { authMiddleware } from "../middleware/auth/auth-middleware.js";
 import { CommentsService } from "../domain/comments-service.js";
@@ -21,6 +24,13 @@ export class CommentsRouter {
     this.router.use(authMiddleware);
 
     this.router.put(
+      "/:commentId/like-status",
+      likeStatusValidationMiddleware,
+      sendErrorsIfAnyMiddleware,
+      this.likeStatus.bind(this),
+    );
+
+    this.router.put(
       "/:commentId",
       commentsValidationMiddleware,
       sendErrorsIfAnyMiddleware,
@@ -28,6 +38,8 @@ export class CommentsRouter {
     );
     this.router.delete("/:commentId", this.deleteComment.bind(this));
   }
+
+  async likeStatus(req, res) {}
 
   async getCommentById(req: RequestWithParams<{ id: string }>, res: Response) {
     const comment = await this.commentsService.findCommentById(req.params.id);

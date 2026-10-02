@@ -11,6 +11,7 @@ export type User = {
     expirationDate: Date;
     isConfirmed: boolean;
   };
+  expiredRefreshTokens: string[];
 };
 
 const userSchema = new Schema<User>(
@@ -25,6 +26,7 @@ const userSchema = new Schema<User>(
       expirationDate: Date,
       isConfirmed: Boolean,
     },
+    expiredRefreshTokens: { type: [String], default: [] },
   },
   { versionKey: false },
 );
