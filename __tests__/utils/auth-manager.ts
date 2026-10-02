@@ -4,9 +4,18 @@ import { app } from "../../src/setting.js";
 export const authTestManager: any = {
   async login(
     data: { loginOrEmail?: string; password?: string },
-    { expectedStatusCode }: { expectedStatusCode: number },
+    {
+      expectedStatusCode,
+      userAgent,
+    }: { expectedStatusCode: number; userAgent?: string },
   ) {
-    const response = await request(app).post("/auth/login").send(data);
+    const requestObject = request(app).post("/auth/login");
+
+    if (userAgent !== undefined) {
+      requestObject.set("User-Agent", userAgent);
+    }
+
+    const response = await requestObject.send(data);
 
     expect(response.statusCode).toBe(expectedStatusCode);
 
@@ -118,6 +127,28 @@ export const authTestManager: any = {
     const response = await request(app)
       .post("/auth/registration-email-resending")
       .send(data);
+
+    expect(response.statusCode).toBe(expectedStatusCode);
+
+    return response;
+  },
+  async passwordRecovery(
+    data: { email?: unknown },
+    { expectedStatusCode }: { expectedStatusCode: number },
+  ) {
+    const response = await request(app)
+      .post("/auth/password-recovery")
+      .send(data);
+
+    expect(response.statusCode).toBe(expectedStatusCode);
+
+    return response;
+  },
+  async newPassword(
+    data: { newPassword?: unknown; recoveryCode?: unknown },
+    { expectedStatusCode }: { expectedStatusCode: number },
+  ) {
+    const response = await request(app).post("/auth/new-password").send(data);
 
     expect(response.statusCode).toBe(expectedStatusCode);
 

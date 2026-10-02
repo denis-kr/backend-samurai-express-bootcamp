@@ -19,6 +19,15 @@ Authorization: Basic admin:qwerty
     "email": "kravchdennis1@gmail.com"
 }
 
+### Login test user
+POST http://localhost:3000/auth/login HTTP/1.1
+content-type: application/json
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 OPR/106.0.0.0
+
+{
+    "loginOrEmail": "kravchdennis1@gmail.com",
+    "password": "qwerty123"
+}
 
 ### Confirm registration (code from the confirmation email link: ...confirm-email?code=<code>)
 POST http://localhost:3000/auth/registration-confirmation HTTP/1.1

@@ -21,28 +21,35 @@ export const login = body("login")
     }
   });
 
-export const email = body("email")
-  .notEmpty()
-  .withMessage("Email is required")
-  .isString()
-  .withMessage("Email must be a string")
-  .matches(/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/)
-  .withMessage("Email must be a valid email address")
-  .custom(async (value) => {
-    const user = await container.get(UsersRepository).findByEmail(value);
+// Factory, not a shared chain: express-validator chains are mutable, so each
+// caller needs its own instance before appending a custom check.
+export const emailFormat = () =>
+  body("email")
+    .notEmpty()
+    .withMessage("Email is required")
+    .isString()
+    .withMessage("Email must be a string")
+    .matches(/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/)
+    .withMessage("Email must be a valid email address");
 
-    if (user) {
-      throw new Error("Email must be unique");
-    }
-  });
+export const email = emailFormat().custom(async (value) => {
+  const user = await container.get(UsersRepository).findByEmail(value);
 
-export const password = body("password")
-  .notEmpty()
-  .withMessage("Password is required")
-  .isString()
-  .withMessage("Password must be a string")
-  .isLength({ min: 6, max: 20 })
-  .withMessage("Password must be between 6 and 20 characters");
+  if (user) {
+    throw new Error("Email must be unique");
+  }
+});
+
+export const passwordFormat = (field = "password", label = "Password") =>
+  body(field)
+    .notEmpty()
+    .withMessage(`${label} is required`)
+    .isString()
+    .withMessage(`${label} must be a string`)
+    .isLength({ min: 6, max: 20 })
+    .withMessage(`${label} must be between 6 and 20 characters`);
+
+export const password = passwordFormat();
 
 export const createNewUserValidationMiddleware = [login, password, email];
 

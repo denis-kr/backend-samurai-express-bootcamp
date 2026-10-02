@@ -3,6 +3,7 @@ import { app } from "../src/setting.js";
 import { authTestManager } from "./utils/auth-manager.js";
 import { usersTestManager } from "./utils/users-manager.js";
 import { emailAdapter } from "../src/adapters/email-adapter.js";
+import { enableRateLimit } from "./utils/rate-limit-control.js";
 
 //The tests have to be isolated and independent.
 
@@ -894,6 +895,261 @@ describe("Auth", () => {
       expect(response.body.errorsMessages).toContainEqual(
         expect.objectContaining({ field: "email" }),
       );
+    });
+  });
+
+  const extractRecoveryCode = (message: string) => {
+    const code = message.match(/recoveryCode=([^"&]+)/)?.[1];
+    expect(code).toBeDefined();
+    return code!;
+  };
+
+  const requestRecoveryCode = async (email: string) => {
+    await authTestManager.passwordRecovery(
+      { email },
+      { expectedStatusCode: 204 },
+    );
+    return extractRecoveryCode(sendEmailMock().mock.lastCall![2]);
+  };
+
+  describe("POST /auth/password-recovery", () => {
+    //POST /auth/password-recovery 204
+    it("should return 204 and send a recovery email to a registered user", async () => {
+      const user = await createTestUser();
+      sendEmailMock().mockClear();
+
+      await authTestManager.passwordRecovery(
+        { email: user.email },
+        { expectedStatusCode: 204 },
+      );
+
+      expect(sendEmailMock()).toHaveBeenCalledTimes(1);
+      const [to, subject, message] = sendEmailMock().mock.lastCall!;
+      expect(to).toBe(user.email);
+      expect(subject).toBe("Password recovery");
+      extractRecoveryCode(message);
+    });
+
+    //POST /auth/password-recovery 204 unknown email
+    it("should return 204 and still send an email if no user has this email", async () => {
+      await authTestManager.passwordRecovery(
+        { email: "nobody@mail.com" },
+        { expectedStatusCode: 204 },
+      );
+
+      expect(sendEmailMock()).toHaveBeenCalledTimes(1);
+      expect(sendEmailMock().mock.lastCall![0]).toBe("nobody@mail.com");
+    });
+
+    //POST /auth/password-recovery 204 email sending fails
+    it("should return 204 even if sending the email fails", async () => {
+      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      sendEmailMock().mockRejectedValueOnce(new Error("SMTP down"));
+
+      await authTestManager.passwordRecovery(
+        { email: "nobody@mail.com" },
+        { expectedStatusCode: 204 },
+      );
+      consoleSpy.mockRestore();
+    });
+
+    //POST /auth/password-recovery 400 invalid email
+    it("should return 400 if email is missing, not a string or has an invalid format", async () => {
+      for (const data of [{}, { email: 42 }, { email: "not-an-email" }]) {
+        const response = await authTestManager.passwordRecovery(data, {
+          expectedStatusCode: 400,
+        });
+        expect(response.body.errorsMessages).toContainEqual(
+          expect.objectContaining({ field: "email" }),
+        );
+      }
+      expect(sendEmailMock()).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("POST /auth/new-password", () => {
+    //POST /auth/new-password 204
+    it("should return 204 and let the user log in with the new password only", async () => {
+      const user = await createTestUser();
+      const recoveryCode = await requestRecoveryCode(user.email);
+
+      await authTestManager.newPassword(
+        { newPassword: "newPassword1", recoveryCode },
+        { expectedStatusCode: 204 },
+      );
+
+      await authTestManager.login(
+        { loginOrEmail: user.login, password: "newPassword1" },
+        { expectedStatusCode: 200 },
+      );
+      await authTestManager.login(
+        { loginOrEmail: user.login, password: user.password },
+        { expectedStatusCode: 401 },
+      );
+    });
+
+    //POST /auth/new-password 400 code reused
+    it("should return 400 if the recovery code was already used", async () => {
+      const user = await createTestUser();
+      const recoveryCode = await requestRecoveryCode(user.email);
+
+      await authTestManager.newPassword(
+        { newPassword: "newPassword1", recoveryCode },
+        { expectedStatusCode: 204 },
+      );
+      const response = await authTestManager.newPassword(
+        { newPassword: "newPassword2", recoveryCode },
+        { expectedStatusCode: 400 },
+      );
+      expect(response.body.errorsMessages).toContainEqual(
+        expect.objectContaining({ field: "recoveryCode" }),
+      );
+    });
+
+    //POST /auth/new-password 400 code replaced by a newer one
+    it("should return 400 for an older recovery code after a new one was requested", async () => {
+      const user = await createTestUser();
+      const oldCode = await requestRecoveryCode(user.email);
+      await requestRecoveryCode(user.email);
+
+      await authTestManager.newPassword(
+        { newPassword: "newPassword1", recoveryCode: oldCode },
+        { expectedStatusCode: 400 },
+      );
+    });
+
+    //POST /auth/new-password 400 code from an unknown email
+    it("should return 400 for a code sent to an email with no user", async () => {
+      const recoveryCode = await requestRecoveryCode("nobody@mail.com");
+
+      await authTestManager.newPassword(
+        { newPassword: "newPassword1", recoveryCode },
+        { expectedStatusCode: 400 },
+      );
+    });
+
+    //POST /auth/new-password 400 code expired
+    it("should return 400 if the recovery code has expired (after 1h)", async () => {
+      const user = await createTestUser();
+      const recoveryCode = await requestRecoveryCode(user.email);
+
+      advanceClockBySeconds(60 * 60 + 1);
+
+      await authTestManager.newPassword(
+        { newPassword: "newPassword1", recoveryCode },
+        { expectedStatusCode: 400 },
+      );
+    });
+
+    //POST /auth/new-password 400 invalid newPassword
+    it("should return 400 if newPassword is missing, too short or too long", async () => {
+      for (const newPassword of [undefined, "12345", "a".repeat(21)]) {
+        const response = await authTestManager.newPassword(
+          { newPassword, recoveryCode: "some-code" },
+          { expectedStatusCode: 400 },
+        );
+        expect(response.body.errorsMessages).toContainEqual(
+          expect.objectContaining({ field: "newPassword" }),
+        );
+      }
+    });
+
+    //POST /auth/new-password 400 recoveryCode missing
+    it("should return 400 if recoveryCode is missing", async () => {
+      const response = await authTestManager.newPassword(
+        { newPassword: "newPassword1" },
+        { expectedStatusCode: 400 },
+      );
+      expect(response.body.errorsMessages).toContainEqual(
+        expect.objectContaining({ field: "recoveryCode" }),
+      );
+    });
+  });
+
+  // Each limited route allows 5 requests per IP per 10s; the 6th is rejected
+  // before validation runs, so an empty body is enough to count as a hit.
+  describe("Rate limiting", () => {
+    const limitedRoutes = [
+      "/auth/login",
+      "/auth/registration",
+      "/auth/registration-confirmation",
+      "/auth/registration-email-resending",
+      "/auth/password-recovery",
+      "/auth/new-password",
+    ];
+
+    const hit = (path: string, data: object = {}) =>
+      request(app).post(path).send(data);
+
+    const hitTimes = async (path: string, times: number) => {
+      for (let i = 0; i < times; i++) {
+        const response = await hit(path);
+        expect(response.statusCode).not.toBe(429);
+      }
+    };
+
+    beforeEach(() => {
+      enableRateLimit();
+    });
+
+    describe.each(limitedRoutes)("POST %s", (path) => {
+      //POST 429 6th request within 10s
+      it("should return 429 for the 6th request within 10 seconds", async () => {
+        await hitTimes(path, 5);
+
+        const response = await hit(path);
+        expect(response.statusCode).toBe(429);
+      });
+
+      //POST 429 -> allowed again after the window
+      it("should accept requests again once the 10 second window has passed", async () => {
+        await hitTimes(path, 5);
+        await hit(path).expect(429);
+
+        advanceClockBySeconds(11);
+
+        const response = await hit(path);
+        expect(response.statusCode).not.toBe(429);
+      });
+    });
+
+    //POST /auth/login 429 even with valid credentials
+    it("should return 429 for valid credentials once the login limit is reached", async () => {
+      const user = await createTestUser();
+      await hitTimes("/auth/login", 5);
+
+      await authTestManager.login(
+        { loginOrEmail: user.login, password: user.password },
+        { expectedStatusCode: 429 },
+      );
+    });
+
+    //POST /auth/password-recovery 429 sends no email
+    it("should not send a recovery email when the request is rate limited", async () => {
+      await hitTimes("/auth/password-recovery", 5);
+      sendEmailMock().mockClear();
+
+      await authTestManager.passwordRecovery(
+        { email: "john@mail.com" },
+        { expectedStatusCode: 429 },
+      );
+      expect(sendEmailMock()).not.toHaveBeenCalled();
+    });
+
+    //limits are counted per route
+    it("should count requests separately for each route", async () => {
+      await hitTimes("/auth/login", 5);
+      await hit("/auth/login").expect(429);
+
+      const response = await hit("/auth/registration");
+      expect(response.statusCode).not.toBe(429);
+    });
+
+    //POST /auth/refresh-token is not limited
+    it("should not rate limit /auth/refresh-token", async () => {
+      for (let i = 0; i < 6; i++) {
+        await authTestManager.refreshToken({ expectedStatusCode: 401 });
+      }
     });
   });
 });

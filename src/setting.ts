@@ -13,9 +13,12 @@ import { UsersRepository } from "./repositories/users-repo.js";
 import { CommentsRepository } from "./repositories/comments-repo.js";
 import { SecurityDevicesRepository } from "./repositories/security-devices-repo.js";
 import cookieParser from "cookie-parser";
+import { express as useragent } from "express-useragent";
 
 export const app: Express = express();
 
+// app.set("trust proxy", true);
+app.use(useragent());
 app.use(cookieParser());
 app.use(express.json());
 app.use("/users", container.get(UsersRouter).router);

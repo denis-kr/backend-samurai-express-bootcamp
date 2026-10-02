@@ -1,5 +1,11 @@
 import { body } from "express-validator";
-import { login, password, email } from "./validation-users.js";
+import {
+  login,
+  password,
+  email,
+  emailFormat,
+  passwordFormat,
+} from "./validation-users.js";
 import { container } from "../../composition-root.js";
 import { UsersRepository } from "../../repositories/users-repo.js";
 
@@ -11,14 +17,8 @@ export const registrationConfirmationValidationMiddleware = body("code")
   .isString()
   .withMessage("Code must be a string");
 
-export const registrationEmailResendingValidationMiddleware = body("email")
-  .notEmpty()
-  .withMessage("Email is required")
-  .isString()
-  .withMessage("Email must be a string")
-  .matches(/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/)
-  .withMessage("Email must be a valid email address")
-  .custom(async (value) => {
+export const registrationEmailResendingValidationMiddleware =
+  emailFormat().custom(async (value) => {
     const user = await container.get(UsersRepository).findByEmail(value);
 
     if (!user) {
@@ -29,3 +29,15 @@ export const registrationEmailResendingValidationMiddleware = body("email")
       throw new Error("Email is already confirmed");
     }
   });
+
+export const newPasswordValidationMiddleware = [
+  passwordFormat("newPassword", "New password"),
+  body("recoveryCode")
+    .notEmpty()
+    .withMessage("Recovery code is required")
+    .isString()
+    .withMessage("Recovery code must be a string"),
+];
+
+// No existence check: unknown emails must look the same as registered ones.
+export const passwordRecoveryValidationMiddleware = emailFormat();

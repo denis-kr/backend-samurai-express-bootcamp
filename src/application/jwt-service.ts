@@ -18,10 +18,12 @@ export const jwtService = {
     );
     return token;
   },
-  async createRefreshJWT(user: { _id: Types.ObjectId }) {
-    // jwtid makes each token unique, even when two are issued for the same user within the same second
+  async createRefreshJWT(user: { _id: Types.ObjectId }, deviceId: string) {
+    // jwtid makes each token unique, even when two are issued for the same user within the same second.
+    // iat keeps milliseconds (fractional seconds are valid per RFC 7519) because it is stored as the
+    // session's lastActiveDate, and a rotation within the same second must still change it.
     const refreshToken = jwt.sign(
-      { userId: user._id.toString() },
+      { userId: user._id.toString(), deviceId, iat: Date.now() / 1000 },
       REFRESH_TOKEN_SECRET,
       {
         expiresIn: "20s",
@@ -30,19 +32,25 @@ export const jwtService = {
     );
     return refreshToken;
   },
-  async getUserIdByAccessToken(token: string) {
+  async getRefreshTokenPayload(token: string) {
     try {
-      const decoded = jwt.verify(token, ACCESS_TOKEN_SECRET) as {
+      const decoded = jwt.verify(token, REFRESH_TOKEN_SECRET) as {
         userId: string;
+        deviceId: string;
+        iat: number;
       };
-      return decoded.userId;
+      return {
+        userId: decoded.userId,
+        deviceId: decoded.deviceId,
+        iat: decoded.iat,
+      };
     } catch (error) {
       return null;
     }
   },
-  async getUserIdByRefreshToken(token: string) {
+  async getUserIdByAccessToken(token: string) {
     try {
-      const decoded = jwt.verify(token, REFRESH_TOKEN_SECRET) as {
+      const decoded = jwt.verify(token, ACCESS_TOKEN_SECRET) as {
         userId: string;
       };
       return decoded.userId;

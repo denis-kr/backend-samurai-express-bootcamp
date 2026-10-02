@@ -1,5 +1,12 @@
 import { Schema, model } from "mongoose";
 
+export type RefreshTokenMeta = {
+  deviceId: string;
+  ip: string;
+  title: string;
+  lastActiveDate: Date;
+};
+
 export type User = {
   userName: string;
   email: string;
@@ -11,8 +18,33 @@ export type User = {
     expirationDate: Date;
     isConfirmed: boolean;
   };
-  expiredRefreshTokens: string[];
+  // Absent until the user requests a password recovery; removed once the password is reset.
+  passwordRecovery?: {
+    recoveryCode: string;
+    expirationDate: Date;
+  };
+  refreshTokensMeta: RefreshTokenMeta[];
 };
+
+const refreshTokenMetaSchema = new Schema<RefreshTokenMeta>(
+  {
+    deviceId: String,
+    ip: String,
+    title: String,
+    lastActiveDate: Date,
+  },
+  { _id: false },
+);
+
+const passwordRecoverySchema = new Schema<
+  NonNullable<User["passwordRecovery"]>
+>(
+  {
+    recoveryCode: String,
+    expirationDate: Date,
+  },
+  { _id: false },
+);
 
 const userSchema = new Schema<User>(
   {
@@ -26,7 +58,8 @@ const userSchema = new Schema<User>(
       expirationDate: Date,
       isConfirmed: Boolean,
     },
-    expiredRefreshTokens: { type: [String], default: [] },
+    passwordRecovery: { type: passwordRecoverySchema, required: false },
+    refreshTokensMeta: { type: [refreshTokenMetaSchema], default: [] },
   },
   { versionKey: false },
 );

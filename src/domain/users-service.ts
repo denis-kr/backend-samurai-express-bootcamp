@@ -6,6 +6,7 @@ import type { User } from "../repositories/models/user-model.js";
 import bcrypt from "bcrypt";
 import { emailManager } from "../manager/email-manager.js";
 import { jwtService } from "../application/jwt-service.js";
+import { createTokens, iatToDate } from "../utils/createTokens.js";
 
 @injectable()
 export class UsersService {
@@ -46,7 +47,7 @@ export class UsersService {
         expirationDate: add(new Date(), { days: 1 }),
         isConfirmed: false,
       },
-      expiredRefreshTokens: [],
+      refreshTokensMeta: [],
     };
 
     const createResult = await this.usersRepository.create(newUser);
@@ -109,6 +110,45 @@ export class UsersService {
     }
     return false;
   }
+  // Sends the email even when no user has this address, so the response
+  // can't be used to find out which emails are registered.
+  async sendPasswordRecoveryEmail(email: string) {
+    const recoveryCode = crypto.randomUUID();
+
+    await this.usersRepository.setPasswordRecovery(email, {
+      recoveryCode,
+      expirationDate: add(new Date(), { hours: 1 }),
+    });
+
+    try {
+      await emailManager.sendPasswordRecoveryEmail(email, recoveryCode);
+    } catch (error) {
+      console.log(error);
+    }
+  }
+  async setNewPassword(recoveryCode: string, newPassword: string) {
+    const user = await this.usersRepository.findByRecoveryCode(recoveryCode);
+
+    if (!user || !user.passwordRecovery) {
+      return false;
+    }
+
+    if (user.passwordRecovery.expirationDate < new Date()) {
+      return false;
+    }
+
+    const passwordSalt = await bcrypt.genSalt(10);
+    const passwordHash = await this._generatePasswordHash(
+      newPassword,
+      passwordSalt,
+    );
+
+    return this.usersRepository.updatePassword(
+      user._id.toString(),
+      passwordHash,
+      passwordSalt,
+    );
+  }
   async _generatePasswordHash(password: string, passwordSalt: string) {
     return bcrypt.hash(password, passwordSalt);
   }
@@ -135,30 +175,99 @@ export class UsersService {
     }
     return false;
   }
-  // Token signature/expiry/revocation are checked by refreshTokenMiddleware; expiring it here
-  // is still atomic, so two concurrent requests with the same token can't both succeed.
+  // Token signature/expiry/session are checked by refreshTokenMiddleware; the lastActiveDate update
+  // is still conditional on the old iat, so two concurrent requests with the same token can't both succeed.
   async refreshTokens(userId: string, refreshToken: string) {
     const user = await this.usersRepository.findById(userId);
+    const tokenPayload = await jwtService.getRefreshTokenPayload(refreshToken);
 
-    if (!user) {
+    if (!user || !tokenPayload) {
       return null;
     }
 
-    const isExpired = await this.usersRepository.expireRefreshToken(
+    const tokens = await createTokens(user, tokenPayload.deviceId);
+
+    if (!tokens) {
+      return null;
+    }
+
+    const isUpdated = await this.usersRepository.updateRefreshTokenLastActiveDate(
       userId,
-      refreshToken,
+      tokenPayload.deviceId,
+      iatToDate(tokenPayload.iat),
+      iatToDate(tokens.iat),
     );
 
-    if (!isExpired) {
+    if (!isUpdated) {
       return null;
     }
 
-    return {
-      accessToken: await jwtService.createAccessJWT(user),
-      refreshToken: await jwtService.createRefreshJWT(user),
-    };
+    return { accessToken: tokens.accessToken, refreshToken: tokens.refreshToken };
+  }
+  async saveRefreshTokenMeta(meta: {
+    userId: string;
+    deviceId: string;
+    ip: string;
+    iat: number;
+    source: string;
+  }) {
+    return this.usersRepository.addRefreshTokenMeta(meta.userId, {
+      deviceId: meta.deviceId,
+      ip: meta.ip,
+      title: meta.source,
+      lastActiveDate: iatToDate(meta.iat),
+    });
+  }
+  async getDevices(userId: string) {
+    const user = await this.usersRepository.findById(userId);
+    return user ? user.refreshTokensMeta : null;
+  }
+  async deleteOtherDevices(userId: string, refreshToken: string) {
+    const tokenPayload = await jwtService.getRefreshTokenPayload(refreshToken);
+
+    if (!tokenPayload) {
+      return false;
+    }
+
+    return this.usersRepository.removeOtherRefreshTokensMeta(
+      userId,
+      tokenPayload.deviceId,
+    );
+  }
+  // Looks the device up across all users so a device owned by someone else
+  // can be told apart (forbidden) from one that doesn't exist (notFound).
+  async deleteDevice(
+    userId: string,
+    deviceId: string,
+  ): Promise<"deleted" | "notFound" | "forbidden"> {
+    const owner = await this.usersRepository.findByDeviceId(deviceId);
+
+    if (!owner) {
+      return "notFound";
+    }
+
+    if (owner._id.toString() !== userId) {
+      return "forbidden";
+    }
+
+    const isRemoved = await this.usersRepository.removeRefreshTokenMeta(
+      userId,
+      deviceId,
+    );
+
+    return isRemoved ? "deleted" : "notFound";
   }
   async logout(userId: string, refreshToken: string) {
-    return this.usersRepository.expireRefreshToken(userId, refreshToken);
+    const tokenPayload = await jwtService.getRefreshTokenPayload(refreshToken);
+
+    if (!tokenPayload) {
+      return false;
+    }
+
+    return this.usersRepository.removeRefreshTokenMeta(
+      userId,
+      tokenPayload.deviceId,
+      iatToDate(tokenPayload.iat),
+    );
   }
 }

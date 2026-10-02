@@ -2,9 +2,11 @@ import type { Request, Response, NextFunction } from "express";
 import { jwtService } from "../../application/jwt-service.js";
 import { container } from "../../composition-root.js";
 import { UsersRepository } from "../../repositories/users-repo.js";
+import { iatToDate } from "../../utils/createTokens.js";
 
 // Lets the request through only with a refreshToken cookie that is correctly signed,
-// not past its expiry, issued to an existing user, and not already used/revoked.
+// not past its expiry, and still the current token of an existing device session
+// (its iat matches that session's lastActiveDate, so rotated/revoked tokens are rejected).
 export const refreshTokenMiddleware = async (
   req: Request,
   res: Response,
@@ -16,16 +18,22 @@ export const refreshTokenMiddleware = async (
   }
 
   // jwt.verify rejects both bad signatures and expired tokens
-  const userId = await jwtService.getUserIdByRefreshToken(refreshToken);
-  if (!userId) {
+  const tokenPayload = await jwtService.getRefreshTokenPayload(refreshToken);
+  if (!tokenPayload) {
     return res.sendStatus(401);
   }
 
-  const user = await container.get(UsersRepository).findById(userId);
-  if (!user || user.expiredRefreshTokens.includes(refreshToken)) {
+  const user = await container
+    .get(UsersRepository)
+    .findByRefreshTokenMeta(
+      tokenPayload.userId,
+      tokenPayload.deviceId,
+      iatToDate(tokenPayload.iat),
+    );
+  if (!user) {
     return res.sendStatus(401);
   }
 
-  req.userId = userId;
+  req.userId = tokenPayload.userId;
   next();
 };

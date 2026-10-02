@@ -1,7 +1,7 @@
 import { injectable } from "inversify";
 import { Types } from "mongoose";
 import { UserModel } from "./models/user-model.js";
-import type { User } from "./models/user-model.js";
+import type { RefreshTokenMeta, User } from "./models/user-model.js";
 
 export type FindAllUsersParams = {
   pageSize: number;
@@ -107,14 +107,111 @@ export class UsersRepository {
     );
     return result.modifiedCount === 1;
   }
-  // Atomically marks the token as expired; returns false if it was already expired (or the user doesn't exist).
-  async expireRefreshToken(id: string, refreshToken: string) {
+  // Returns false if no user has this email.
+  async setPasswordRecovery(
+    email: string,
+    passwordRecovery: NonNullable<User["passwordRecovery"]>,
+  ) {
+    const result = await UserModel.updateOne(
+      { email },
+      { $set: { passwordRecovery } },
+    );
+    return result.matchedCount === 1;
+  }
+  async findByRecoveryCode(recoveryCode: string) {
+    return UserModel.findOne({
+      "passwordRecovery.recoveryCode": recoveryCode,
+    }).lean();
+  }
+  // Sets the new password and clears the recovery code so it can't be reused.
+  async updatePassword(id: string, passwordHash: string, passwordSalt: string) {
     if (!Types.ObjectId.isValid(id)) {
       return false;
     }
     const result = await UserModel.updateOne(
-      { _id: new Types.ObjectId(id), expiredRefreshTokens: { $ne: refreshToken } },
-      { $push: { expiredRefreshTokens: refreshToken } },
+      { _id: new Types.ObjectId(id) },
+      { $set: { passwordHash, passwordSalt }, $unset: { passwordRecovery: "" } },
+    );
+    return result.modifiedCount === 1;
+  }
+  async addRefreshTokenMeta(id: string, meta: RefreshTokenMeta) {
+    if (!Types.ObjectId.isValid(id)) {
+      return false;
+    }
+    const result = await UserModel.updateOne(
+      { _id: new Types.ObjectId(id) },
+      { $push: { refreshTokensMeta: meta } },
+    );
+    return result.modifiedCount === 1;
+  }
+  async findByDeviceId(deviceId: string) {
+    return UserModel.findOne({ "refreshTokensMeta.deviceId": deviceId }).lean();
+  }
+  // With lastActiveDate, only removes the session if it still matches (i.e. the token wasn't rotated meanwhile).
+  async removeRefreshTokenMeta(
+    id: string,
+    deviceId: string,
+    lastActiveDate?: Date,
+  ) {
+    if (!Types.ObjectId.isValid(id)) {
+      return false;
+    }
+    const result = await UserModel.updateOne(
+      { _id: new Types.ObjectId(id) },
+      {
+        $pull: {
+          refreshTokensMeta: lastActiveDate
+            ? { deviceId, lastActiveDate }
+            : { deviceId },
+        },
+      },
+    );
+    return result.modifiedCount === 1;
+  }
+  // Returns true if the user exists, even when there were no other devices to remove.
+  async removeOtherRefreshTokensMeta(id: string, currentDeviceId: string) {
+    if (!Types.ObjectId.isValid(id)) {
+      return false;
+    }
+    const result = await UserModel.updateOne(
+      { _id: new Types.ObjectId(id) },
+      { $pull: { refreshTokensMeta: { deviceId: { $ne: currentDeviceId } } } },
+    );
+    return result.matchedCount === 1;
+  }
+  // A refresh token is legit only while its iat still equals the lastActiveDate of its device session.
+  async findByRefreshTokenMeta(
+    id: string,
+    deviceId: string,
+    lastActiveDate: Date,
+  ) {
+    if (!Types.ObjectId.isValid(id)) {
+      return null;
+    }
+    return UserModel.findOne({
+      _id: new Types.ObjectId(id),
+      refreshTokensMeta: { $elemMatch: { deviceId, lastActiveDate } },
+    }).lean();
+  }
+  // Atomically moves the session to the new token; returns false if the old one was already
+  // rotated/revoked, so two concurrent requests with the same token can't both succeed.
+  async updateRefreshTokenLastActiveDate(
+    id: string,
+    deviceId: string,
+    oldLastActiveDate: Date,
+    newLastActiveDate: Date,
+  ) {
+    if (!Types.ObjectId.isValid(id)) {
+      return false;
+    }
+    const result = await UserModel.updateOne(
+      {
+        _id: new Types.ObjectId(id),
+        refreshTokensMeta: {
+          $elemMatch: { deviceId, lastActiveDate: oldLastActiveDate },
+        },
+      },
+      { $set: { "refreshTokensMeta.$.lastActiveDate": newLastActiveDate } },
     );
     return result.modifiedCount === 1;
   }
