@@ -2,7 +2,11 @@ import { type Post } from "./../repositories/models/post-model.js";
 import express, { Router, type Response } from "express";
 import { inject, injectable } from "inversify";
 import { basicAuthMiddleware } from "../middleware/auth/basic.js";
-import { authMiddleware } from "../middleware/auth/auth-middleware.js";
+import {
+  authMiddleware,
+  optionalAuthMiddleware,
+} from "../middleware/auth/auth-middleware.js";
+import { mapCommentToView } from "../utils/mapCommentToView.js";
 import { createUpdateBodyValidationMiddleware } from "../middleware/validation/validation-posts.js";
 import { commentsValidationMiddleware } from "../middleware/validation/validation-comments.js";
 import type {
@@ -37,6 +41,7 @@ export class PostsRouter {
     );
     this.router.get(
       "/:postId/comments",
+      optionalAuthMiddleware,
       paginationValidationMiddleware,
       sendErrorsIfAnyMiddleware,
       this.getCommentsByPostId.bind(this),
@@ -100,12 +105,9 @@ export class PostsRouter {
       return res.sendStatus(500);
     }
 
-    return res.status(201).json({
-      id: createdComment._id.toString(),
-      content: createdComment.content,
-      commentatorInfo: createdComment.commentatorInfo,
-      createdAt: createdComment.createdAt,
-    });
+    return res
+      .status(201)
+      .json(mapCommentToView(createdComment, req.userId));
   }
 
   //return all comments for a specific post
@@ -151,12 +153,9 @@ export class PostsRouter {
       page: pageNumber,
       pageSize,
       totalCount,
-      items: comments.items.map((comment) => ({
-        id: comment._id.toString(),
-        content: comment.content,
-        commentatorInfo: comment.commentatorInfo,
-        createdAt: comment.createdAt,
-      })),
+      items: comments.items.map((comment) =>
+        mapCommentToView(comment, req.userId),
+      ),
     });
   }
 

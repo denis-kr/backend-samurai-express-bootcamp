@@ -2,6 +2,7 @@ import { postsTestManager } from "./utils/posts-manager.js";
 import { blogsTestManager } from "./utils/blogs-manager.js";
 import { usersTestManager } from "./utils/users-manager.js";
 import { authTestManager } from "./utils/auth-manager.js";
+import { commentsTestManager } from "./utils/comments-manager.js";
 import request from "supertest";
 import { MongoClient } from "mongodb";
 import { app } from "../src/setting.js";
@@ -1496,6 +1497,11 @@ describe("Posts", () => {
       expect(response.body.createdAt).toBeDefined();
       expect(response.body.id).toBeDefined();
       expect(response.body._id).toBeUndefined();
+      expect(response.body.likesInfo).toEqual({
+        likesCount: 0,
+        dislikesCount: 0,
+        myStatus: "None",
+      });
     });
 
     //POST /posts/:postId/comments 401 no Authorization header
@@ -1760,6 +1766,65 @@ describe("Posts", () => {
       const item = response.body.items[0];
       expect(item.id).toBeDefined();
       expect(item._id).toBeUndefined();
+    });
+
+    //GET /posts/:postId/comments 200 likesInfo with myStatus for the current viewer
+    it("should return likesInfo with myStatus of the user from the access token", async () => {
+      const blog = await createTestBlog();
+      const post = await postsTestManager.createPost(
+        {
+          title: "Post 1",
+          shortDescription: "Short description 1",
+          content: "Content 1",
+          blogId: blog.id,
+        },
+        { expectedStatusCode: 201, isAuthorized: true },
+      );
+      const author = await createTestUserAndLogin();
+      const liker = await createTestUserAndLogin({
+        login: "liker",
+        email: "liker@mail.com",
+      });
+      const comment = await postsTestManager.createCommentForPost(
+        post.body.id,
+        { content: "A".repeat(20) },
+        { expectedStatusCode: 201, authHeader: `Bearer ${author.accessToken}` },
+      );
+      await commentsTestManager.updateLikeStatus(
+        comment.body.id,
+        { likeStatus: "Like" },
+        { expectedStatusCode: 204, authHeader: `Bearer ${liker.accessToken}` },
+      );
+
+      const asLiker = await postsTestManager.getCommentsForPost(
+        post.body.id,
+        {},
+        { expectedStatusCode: 200, authHeader: `Bearer ${liker.accessToken}` },
+      );
+      expect(asLiker.body.items[0].likesInfo).toEqual({
+        likesCount: 1,
+        dislikesCount: 0,
+        myStatus: "Like",
+      });
+
+      const asAuthor = await postsTestManager.getCommentsForPost(
+        post.body.id,
+        {},
+        { expectedStatusCode: 200, authHeader: `Bearer ${author.accessToken}` },
+      );
+      expect(asAuthor.body.items[0].likesInfo).toEqual({
+        likesCount: 1,
+        dislikesCount: 0,
+        myStatus: "None",
+      });
+
+      // An invalid token on this public endpoint is ignored rather than rejected
+      const withInvalidToken = await postsTestManager.getCommentsForPost(
+        post.body.id,
+        {},
+        { expectedStatusCode: 200, authHeader: "Bearer invalid.token.value" },
+      );
+      expect(withInvalidToken.body.items[0].likesInfo.myStatus).toBe("None");
     });
 
     //GET /posts/:postId/comments 200 only returns comments for the specified post

@@ -1,7 +1,7 @@
 import { injectable } from "inversify";
 import { Types } from "mongoose";
 import { CommentModel } from "./models/comment-model.js";
-import type { Comment } from "./models/comment-model.js";
+import type { Comment, LikeStatus } from "./models/comment-model.js";
 
 export type FindAllCommentsParams = {
   postId: string;
@@ -54,6 +54,43 @@ export class CommentsRepository {
       { $set: { content } },
     );
     return result.matchedCount === 1;
+  }
+  async setLikeStatus(id: string, userId: string, likeStatus: LikeStatus) {
+    if (!Types.ObjectId.isValid(id)) {
+      return false;
+    }
+    const _id = new Types.ObjectId(id);
+
+    // "None" just removes the user's like/dislike, if there was one
+    if (likeStatus === "None") {
+      const result = await CommentModel.updateOne(
+        { _id },
+        { $pull: { likes: { userId } } },
+      );
+      return result.matchedCount === 1;
+    }
+
+    // User already liked/disliked this comment — switch the status in place
+    const updated = await CommentModel.updateOne(
+      { _id, "likes.userId": userId },
+      { $set: { "likes.$.status": likeStatus, "likes.$.createdAt": new Date() } },
+    );
+    if (updated.matchedCount === 1) {
+      return true;
+    }
+
+    // First reaction from this user; the userId filter guards against
+    // pushing a duplicate entry if two requests race each other
+    const pushed = await CommentModel.updateOne(
+      { _id, "likes.userId": { $ne: userId } },
+      { $push: { likes: { userId, status: likeStatus, createdAt: new Date() } } },
+    );
+    if (pushed.matchedCount === 1) {
+      return true;
+    }
+
+    // Lost a race to a concurrent push for the same user, or the comment is gone
+    return (await CommentModel.exists({ _id })) !== null;
   }
   async deleteById(id: string) {
     if (!Types.ObjectId.isValid(id)) {

@@ -1,7 +1,10 @@
 import { inject, injectable } from "inversify";
 import { CommentsRepository } from "../repositories/comments-repo.js";
 import type { FindAllCommentsParams } from "../repositories/comments-repo.js";
-import type { Comment } from "../repositories/models/comment-model.js";
+import type {
+  Comment,
+  LikeStatus,
+} from "../repositories/models/comment-model.js";
 import { UsersRepository } from "../repositories/users-repo.js";
 
 @injectable()
@@ -26,6 +29,7 @@ export class CommentsService {
       },
       postId,
       createdAt: new Date(),
+      likes: [],
     };
 
     return this.commentsRepository.create(newComment);
@@ -43,6 +47,9 @@ export class CommentsService {
   }
   updateComment(id: string, content: string) {
     return this.commentsRepository.updateById(id, content);
+  }
+  setLikeStatus(commentId: string, userId: string, likeStatus: LikeStatus) {
+    return this.commentsRepository.setLikeStatus(commentId, userId, likeStatus);
   }
   deleteCommentById(id: string) {
     return this.commentsRepository.deleteById(id);

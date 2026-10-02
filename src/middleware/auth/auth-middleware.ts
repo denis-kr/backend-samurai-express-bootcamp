@@ -24,3 +24,20 @@ export const authMiddleware = async (
   req.userId = userId;
   next();
 };
+
+// For public endpoints whose response depends on the viewer (e.g. likesInfo.myStatus):
+// sets req.userId when a valid Bearer token is sent, otherwise leaves it null. Never 401s.
+export const optionalAuthMiddleware = async (
+  req: Request,
+  _res: Response,
+  next: NextFunction,
+) => {
+  req.userId = null;
+
+  const token = req.headers["authorization"]?.split(" ")[1];
+  if (token) {
+    req.userId = await jwtService.getUserIdByAccessToken(token);
+  }
+
+  next();
+};

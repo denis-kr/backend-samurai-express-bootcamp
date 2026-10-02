@@ -156,11 +156,20 @@ export const postsTestManager: any = {
       sortBy?: string;
       sortDirection?: string;
     } = {},
-    { expectedStatusCode }: { expectedStatusCode: number }
+    {
+      expectedStatusCode,
+      authHeader,
+    }: { expectedStatusCode: number; authHeader?: string }
   ) {
-    const response = await request(app)
+    const requestObject = request(app)
       .get(`/posts/${postId}/comments`)
       .query(query as any);
+
+    if (authHeader) {
+      requestObject.set("Authorization", authHeader);
+    }
+
+    const response = await requestObject;
 
     expect(response.statusCode).toBe(expectedStatusCode);
 

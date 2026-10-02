@@ -4,9 +4,18 @@ import { app } from "../../src/setting.js";
 export const commentsTestManager: any = {
   async getCommentById(
     id: string,
-    { expectedStatusCode }: { expectedStatusCode: number }
+    {
+      expectedStatusCode,
+      authHeader,
+    }: { expectedStatusCode: number; authHeader?: string }
   ) {
-    const response = await request(app).get(`/comments/${id}`);
+    const requestObject = request(app).get(`/comments/${id}`);
+
+    if (authHeader) {
+      requestObject.set("Authorization", authHeader);
+    }
+
+    const response = await requestObject;
 
     expect(response.statusCode).toBe(expectedStatusCode);
 

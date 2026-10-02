@@ -5,12 +5,17 @@ import {
   likeStatusValidationMiddleware,
 } from "../middleware/validation/validation-comments.js";
 import { sendErrorsIfAnyMiddleware } from "../middleware/validation/validation-universal.js";
-import { authMiddleware } from "../middleware/auth/auth-middleware.js";
+import {
+  authMiddleware,
+  optionalAuthMiddleware,
+} from "../middleware/auth/auth-middleware.js";
 import { CommentsService } from "../domain/comments-service.js";
 import type {
   RequestWithParams,
   RequestWithParamsAndBody,
 } from "../utils/types.js";
+import type { LikeStatus } from "../repositories/models/comment-model.js";
+import { mapCommentToView } from "../utils/mapCommentToView.js";
 
 @injectable()
 export class CommentsRouter {
@@ -19,7 +24,11 @@ export class CommentsRouter {
   constructor(
     @inject(CommentsService) private readonly commentsService: CommentsService,
   ) {
-    this.router.get("/:id", this.getCommentById.bind(this));
+    this.router.get(
+      "/:id",
+      optionalAuthMiddleware,
+      this.getCommentById.bind(this),
+    );
 
     this.router.use(authMiddleware);
 
@@ -39,7 +48,24 @@ export class CommentsRouter {
     this.router.delete("/:commentId", this.deleteComment.bind(this));
   }
 
-  async likeStatus(req, res) {}
+  async likeStatus(
+    req: RequestWithParamsAndBody<
+      { commentId: string },
+      { likeStatus: LikeStatus }
+    >,
+    res: Response,
+  ) {
+    const isUpdated = await this.commentsService.setLikeStatus(
+      req.params.commentId,
+      req.userId!,
+      req.body.likeStatus,
+    );
+    if (!isUpdated) {
+      return res.sendStatus(404);
+    }
+
+    return res.sendStatus(204);
+  }
 
   async getCommentById(req: RequestWithParams<{ id: string }>, res: Response) {
     const comment = await this.commentsService.findCommentById(req.params.id);
@@ -47,12 +73,7 @@ export class CommentsRouter {
       return res.sendStatus(404);
     }
 
-    return res.status(200).json({
-      id: comment._id.toString(),
-      content: comment.content,
-      commentatorInfo: comment.commentatorInfo,
-      createdAt: comment.createdAt,
-    });
+    return res.status(200).json(mapCommentToView(comment, req.userId));
   }
 
   async updateComment(

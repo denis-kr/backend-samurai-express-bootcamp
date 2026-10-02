@@ -393,9 +393,124 @@ describe("Comments", () => {
       }
     });
 
-    // The handler is still an empty stub (never sends a response), so the
-    // happy path and not-found cases can't be exercised yet.
-    it.todo("PUT /comments/:commentId/like-status 204 sets Like/Dislike/None");
-    it.todo("PUT /comments/:commentId/like-status 404 comment does not exist");
+    const getLikesInfo = async (commentId: string, accessToken?: string) => {
+      const response = await commentsTestManager.getCommentById(commentId, {
+        expectedStatusCode: 200,
+        authHeader: accessToken ? `Bearer ${accessToken}` : undefined,
+      });
+      return response.body.likesInfo;
+    };
+
+    //PUT /comments/:commentId/like-status 204 Like -> Dislike -> None
+    it("should add, switch and remove the user's like status", async () => {
+      const post = await createTestPost();
+      const { accessToken } = await createTestUserAndLogin();
+      const created = await createTestComment(post.id, accessToken);
+      const authHeader = `Bearer ${accessToken}`;
+
+      await commentsTestManager.updateLikeStatus(
+        created.id,
+        { likeStatus: "Like" },
+        { expectedStatusCode: 204, authHeader },
+      );
+      expect(await getLikesInfo(created.id, accessToken)).toEqual({
+        likesCount: 1,
+        dislikesCount: 0,
+        myStatus: "Like",
+      });
+
+      // Repeating the same status doesn't count twice
+      await commentsTestManager.updateLikeStatus(
+        created.id,
+        { likeStatus: "Like" },
+        { expectedStatusCode: 204, authHeader },
+      );
+      expect(await getLikesInfo(created.id, accessToken)).toEqual({
+        likesCount: 1,
+        dislikesCount: 0,
+        myStatus: "Like",
+      });
+
+      await commentsTestManager.updateLikeStatus(
+        created.id,
+        { likeStatus: "Dislike" },
+        { expectedStatusCode: 204, authHeader },
+      );
+      expect(await getLikesInfo(created.id, accessToken)).toEqual({
+        likesCount: 0,
+        dislikesCount: 1,
+        myStatus: "Dislike",
+      });
+
+      await commentsTestManager.updateLikeStatus(
+        created.id,
+        { likeStatus: "None" },
+        { expectedStatusCode: 204, authHeader },
+      );
+      expect(await getLikesInfo(created.id, accessToken)).toEqual({
+        likesCount: 0,
+        dislikesCount: 0,
+        myStatus: "None",
+      });
+    });
+
+    //PUT /comments/:commentId/like-status 204 likes from different users are counted separately
+    it("should count each user's status separately and report myStatus per viewer", async () => {
+      const post = await createTestPost();
+      const first = await createTestUserAndLogin();
+      const second = await createTestUserAndLogin({
+        login: "commenter2",
+        email: "commenter2@mail.com",
+      });
+      const third = await createTestUserAndLogin({
+        login: "commenter3",
+        email: "commenter3@mail.com",
+      });
+      const created = await createTestComment(post.id, first.accessToken);
+
+      await commentsTestManager.updateLikeStatus(
+        created.id,
+        { likeStatus: "Like" },
+        { expectedStatusCode: 204, authHeader: `Bearer ${first.accessToken}` },
+      );
+      await commentsTestManager.updateLikeStatus(
+        created.id,
+        { likeStatus: "Like" },
+        { expectedStatusCode: 204, authHeader: `Bearer ${second.accessToken}` },
+      );
+      await commentsTestManager.updateLikeStatus(
+        created.id,
+        { likeStatus: "Dislike" },
+        { expectedStatusCode: 204, authHeader: `Bearer ${third.accessToken}` },
+      );
+
+      const counts = { likesCount: 2, dislikesCount: 1 };
+      expect(await getLikesInfo(created.id, first.accessToken)).toEqual({
+        ...counts,
+        myStatus: "Like",
+      });
+      expect(await getLikesInfo(created.id, third.accessToken)).toEqual({
+        ...counts,
+        myStatus: "Dislike",
+      });
+      // Anonymous viewers get the counts with myStatus "None"
+      expect(await getLikesInfo(created.id)).toEqual({
+        ...counts,
+        myStatus: "None",
+      });
+    });
+
+    //PUT /comments/:commentId/like-status 404 comment does not exist
+    it("should return 404 if the comment does not exist", async () => {
+      const { accessToken } = await createTestUserAndLogin();
+
+      for (const commentId of ["000000000000000000000000", "not-an-object-id"]) {
+        await commentsTestManager.updateLikeStatus(
+          commentId,
+          { likeStatus: "Like" },
+          { expectedStatusCode: 404, authHeader: `Bearer ${accessToken}` },
+        );
+      }
+    });
   });
 });
