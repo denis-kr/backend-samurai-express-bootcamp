@@ -161,9 +161,9 @@ export class UsersService {
       return false;
     }
 
-    if (user.emailConfirmation.isConfirmed === false) {
-      return false;
-    }
+    // if (user.emailConfirmation.isConfirmed === false) {
+    //   return false;
+    // }
 
     const passwordHash = await this._generatePasswordHash(
       password,
@@ -191,18 +191,22 @@ export class UsersService {
       return null;
     }
 
-    const isUpdated = await this.usersRepository.updateRefreshTokenLastActiveDate(
-      userId,
-      tokenPayload.deviceId,
-      iatToDate(tokenPayload.iat),
-      iatToDate(tokens.iat),
-    );
+    const isUpdated =
+      await this.usersRepository.updateRefreshTokenLastActiveDate(
+        userId,
+        tokenPayload.deviceId,
+        iatToDate(tokenPayload.iat),
+        iatToDate(tokens.iat),
+      );
 
     if (!isUpdated) {
       return null;
     }
 
-    return { accessToken: tokens.accessToken, refreshToken: tokens.refreshToken };
+    return {
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+    };
   }
   async saveRefreshTokenMeta(meta: {
     userId: string;
