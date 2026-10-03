@@ -1,6 +1,8 @@
 import request from "supertest";
 import { app } from "../src/setting.js";
+import { emailAdapter } from "../src/adapters/email-adapter.js";
 import { usersTestManager } from "./utils/users-manager.js";
+import { authTestManager } from "./utils/auth-manager.js";
 
 //The tests have to be isolated and independent.
 
@@ -176,6 +178,29 @@ describe("Users", () => {
         "mango_ser",
         "zebra_ser",
       ]);
+    });
+  });
+
+  describe("POST /users", () => {
+    //POST /users 201 user is confirmed without an email
+    it("should create an already confirmed user without sending a confirmation email", async () => {
+      vi.mocked(emailAdapter.sendEmail).mockClear();
+      const data = {
+        login: "john_doe",
+        password: "password1",
+        email: "john@mail.com",
+      };
+
+      await usersTestManager.createUser(data, {
+        expectedStatusCode: 201,
+        isAuthorized: true,
+      });
+
+      expect(emailAdapter.sendEmail).not.toHaveBeenCalled();
+      await authTestManager.login(
+        { loginOrEmail: data.login, password: data.password },
+        { expectedStatusCode: 200 },
+      );
     });
   });
 });

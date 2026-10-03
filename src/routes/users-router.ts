@@ -93,6 +93,7 @@ export class UsersRouter {
       login,
       password,
       email,
+      true,
     );
     if (!newUserId) {
       return res.sendStatus(500);

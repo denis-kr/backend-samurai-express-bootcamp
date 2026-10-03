@@ -29,7 +29,13 @@ export class UsersService {
   async deleteUserById(id: string) {
     return this.usersRepository.deleteById(id);
   }
-  async addNewUser(login: string, password: string, email: string) {
+  // Admin-created users (POST /users) are confirmed up front and get no confirmation email.
+  async addNewUser(
+    login: string,
+    password: string,
+    email: string,
+    isConfirmed = false,
+  ) {
     const passwordSalt = await bcrypt.genSalt(10);
     const passwordHash = await this._generatePasswordHash(
       password,
@@ -45,12 +51,16 @@ export class UsersService {
       emailConfirmation: {
         confirmationCode: crypto.randomUUID(),
         expirationDate: add(new Date(), { days: 1 }),
-        isConfirmed: false,
+        isConfirmed,
       },
       refreshTokensMeta: [],
     };
 
     const createResult = await this.usersRepository.create(newUser);
+
+    if (isConfirmed) {
+      return createResult;
+    }
 
     try {
       await emailManager.sendConfirmationEmail(
@@ -161,9 +171,9 @@ export class UsersService {
       return false;
     }
 
-    // if (user.emailConfirmation.isConfirmed === false) {
-    //   return false;
-    // }
+    if (user.emailConfirmation.isConfirmed === false) {
+      return false;
+    }
 
     const passwordHash = await this._generatePasswordHash(
       password,

@@ -1,15 +1,5 @@
 import request from "supertest";
 import { app } from "../../src/setting.js";
-import { emailAdapter } from "../../src/adapters/email-adapter.js";
-
-// The email adapter is mocked in __tests__/setup.ts; pull the confirmation code
-// out of the most recent "sent" email so tests can confirm users like a real client would.
-const getLastConfirmationCode = () => {
-  const lastCall = vi.mocked(emailAdapter.sendEmail).mock.lastCall;
-  const code = lastCall?.[2].match(/code=([^"&]+)/)?.[1];
-  expect(code).toBeDefined();
-  return code!;
-};
 
 export const usersTestManager: any = {
   async getUsers(
@@ -76,12 +66,6 @@ export const usersTestManager: any = {
     if (response.statusCode === 201) {
       expect(response.body.login).toBe(data.login);
       expect(response.body.email).toBe(data.email);
-
-      // Login requires a confirmed email, so confirm every successfully created user.
-      await request(app)
-        .post("/auth/registration-confirmation")
-        .send({ code: getLastConfirmationCode() })
-        .expect(204);
     }
 
     return response;
