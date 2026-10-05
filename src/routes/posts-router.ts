@@ -33,6 +33,12 @@ export class PostsRouter {
     @inject(CommentsService) private readonly commentsService: CommentsService,
   ) {
     this.router.post(
+      "/:postId/like-status",
+      authMiddleware,
+      this.setLikeStatus.bind(this),
+    );
+
+    this.router.post(
       "/:postId/comments",
       authMiddleware,
       commentsValidationMiddleware,
@@ -76,6 +82,8 @@ export class PostsRouter {
     this.router.delete("/:id", this.deletePost.bind(this));
   }
 
+  async setLikeStatus() {}
+
   //add new comment to a specific post
   async createCommentForPost(
     req: RequestWithParamsAndBody<{ postId: string }, { content: string }>,
@@ -98,16 +106,13 @@ export class PostsRouter {
       return res.sendStatus(401);
     }
 
-    const createdComment = await this.commentsService.findCommentById(
-      commentId,
-    );
+    const createdComment =
+      await this.commentsService.findCommentById(commentId);
     if (!createdComment) {
       return res.sendStatus(500);
     }
 
-    return res
-      .status(201)
-      .json(mapCommentToView(createdComment, req.userId));
+    return res.status(201).json(mapCommentToView(createdComment, req.userId));
   }
 
   //return all comments for a specific post
