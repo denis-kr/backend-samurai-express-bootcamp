@@ -17,7 +17,7 @@ import { express as useragent } from "express-useragent";
 
 export const app: Express = express();
 
-// app.set("trust proxy", true);
+app.set("trust proxy", true);
 app.use(useragent());
 app.use(cookieParser());
 app.use(express.json());
