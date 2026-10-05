@@ -13,7 +13,7 @@ export const jwtService = {
       { userId: user._id.toString() },
       ACCESS_TOKEN_SECRET,
       {
-        expiresIn: "10s",
+        expiresIn: "5m",
       },
     );
     return token;
@@ -26,7 +26,7 @@ export const jwtService = {
       { userId: user._id.toString(), deviceId, iat: Date.now() / 1000 },
       REFRESH_TOKEN_SECRET,
       {
-        expiresIn: "20s",
+        expiresIn: "24h",
         jwtid: crypto.randomUUID(),
       },
     );
