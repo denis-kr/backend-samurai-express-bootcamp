@@ -11,6 +11,7 @@ import {
   sendErrorsIfAnyMiddleware,
 } from "../middleware/validation/validation-universal.js";
 import { basicAuthMiddleware } from "../middleware/auth/basic.js";
+import { optionalAuthMiddleware } from "../middleware/auth/auth-middleware.js";
 import type {
   RequestWithParamsAndBody,
   RequestWithBody,
@@ -21,6 +22,7 @@ import type {
 import type { Blog } from "../repositories/models/blog-model.js";
 import { PostsService } from "../domain/posts-service.js";
 import { createNewPostForBlogValidationMiddleware } from "../middleware/validation/validation-posts.js";
+import { mapPostToView } from "../utils/mapPostToView.js";
 
 @injectable()
 export class BlogsRouter {
@@ -44,6 +46,7 @@ export class BlogsRouter {
     );
     this.router.get(
       "/:blogId/posts",
+      optionalAuthMiddleware,
       blogIdValidationMiddleware,
       paginationValidationMiddleware,
       sendErrorsIfAnyMiddleware,
@@ -171,11 +174,7 @@ export class BlogsRouter {
       page: pageNumber,
       pageSize,
       totalCount: totalCount,
-      items: posts.items.map((post) => ({
-        ...post,
-        id: post._id.toString(),
-        _id: undefined,
-      })),
+      items: posts.items.map((post) => mapPostToView(post, req.userId)),
     });
   }
 
@@ -205,9 +204,7 @@ export class BlogsRouter {
 
     const newPost = await this.postsService.findPostById(newPostId);
     if (newPost) {
-      return res
-        .status(201)
-        .json({ ...newPost, id: newPost._id.toString(), _id: undefined });
+      return res.status(201).json(mapPostToView(newPost, null));
     }
     return res.sendStatus(500);
   }

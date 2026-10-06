@@ -6,6 +6,7 @@ import { commentsTestManager } from "./utils/comments-manager.js";
 import request from "supertest";
 import { MongoClient } from "mongodb";
 import { app } from "../src/setting.js";
+import { PostModel } from "../src/repositories/models/post-model.js";
 
 const mongoURI = process.env.MONGO_URI || `mongodb://0.0.0.0:27017/samurai`;
 
@@ -1921,6 +1922,243 @@ describe("Posts", () => {
       expect(response.body.totalCount).toBe(12);
       expect(response.body.pagesCount).toBe(2);
       expect(response.body.items).toHaveLength(10);
+    });
+  });
+
+  describe("PUT /posts/:postId/like-status", () => {
+    const createTestPost = async () => {
+      const blog = await createTestBlog();
+      const post = await postsTestManager.createPost(
+        {
+          title: "Post 1",
+          shortDescription: "Short description 1",
+          content: "Content 1",
+          blogId: blog.id,
+        },
+        { expectedStatusCode: 201, isAuthorized: true },
+      );
+      return post.body;
+    };
+
+    const getExtendedLikesInfo = async (postId: string, accessToken?: string) => {
+      const response = await postsTestManager.getPostById(postId, {
+        expectedStatusCode: 200,
+        authHeader: accessToken ? `Bearer ${accessToken}` : undefined,
+      });
+      return response.body.extendedLikesInfo;
+    };
+
+    //PUT /posts/:postId/like-status 401 no Authorization header
+    it("should return 401 without an Authorization header", async () => {
+      const post = await createTestPost();
+      await postsTestManager.updateLikeStatus(
+        post.id,
+        { likeStatus: "Like" },
+        { expectedStatusCode: 401 },
+      );
+    });
+
+    //PUT /posts/:postId/like-status 401 invalid token
+    it("should return 401 with an invalid token", async () => {
+      const post = await createTestPost();
+      await postsTestManager.updateLikeStatus(
+        post.id,
+        { likeStatus: "Like" },
+        { expectedStatusCode: 401, authHeader: "Bearer invalid.token.value" },
+      );
+    });
+
+    //PUT /posts/:postId/like-status 400 likeStatus missing or not one of None/Like/Dislike
+    it("should return 400 if likeStatus is missing or invalid", async () => {
+      const post = await createTestPost();
+      const { accessToken } = await createTestUserAndLogin();
+
+      for (const data of [{}, { likeStatus: "like" }, { likeStatus: "" }, { likeStatus: 1 }]) {
+        const response = await postsTestManager.updateLikeStatus(post.id, data, {
+          expectedStatusCode: 400,
+          authHeader: `Bearer ${accessToken}`,
+        });
+        expect(response.body.errorsMessages).toEqual([
+          expect.objectContaining({ field: "likeStatus" }),
+        ]);
+      }
+    });
+
+    //PUT /posts/:postId/like-status 404 post does not exist / malformed id
+    it("should return 404 for a non-existent or malformed postId", async () => {
+      const { accessToken } = await createTestUserAndLogin();
+      for (const postId of ["507f1f77bcf86cd799439011", "not-an-object-id"]) {
+        await postsTestManager.updateLikeStatus(
+          postId,
+          { likeStatus: "Like" },
+          { expectedStatusCode: 404, authHeader: `Bearer ${accessToken}` },
+        );
+      }
+    });
+
+    //PUT /posts/:postId/like-status new post starts with empty extendedLikesInfo
+    it("should return empty extendedLikesInfo for a freshly created post", async () => {
+      const post = await createTestPost();
+      expect(post.extendedLikesInfo).toEqual({
+        likesCount: 0,
+        dislikesCount: 0,
+        myStatus: "None",
+        newestLikes: [],
+      });
+      expect(post.likes).toBeUndefined();
+    });
+
+    //PUT /posts/:postId/like-status 204 Like -> Like -> Dislike -> None
+    it("should add, keep, switch and remove the user's like status", async () => {
+      const post = await createTestPost();
+      const user = await createTestUserAndLogin();
+      const auth = { authHeader: `Bearer ${user.accessToken}` };
+
+      await postsTestManager.updateLikeStatus(post.id, { likeStatus: "Like" }, { expectedStatusCode: 204, ...auth });
+      const afterLike = await getExtendedLikesInfo(post.id, user.accessToken);
+      expect(afterLike).toEqual({
+        likesCount: 1,
+        dislikesCount: 0,
+        myStatus: "Like",
+        newestLikes: [
+          { addedAt: expect.any(String), userId: expect.any(String), login: user.login },
+        ],
+      });
+
+      // Liking twice does not count twice
+      await postsTestManager.updateLikeStatus(post.id, { likeStatus: "Like" }, { expectedStatusCode: 204, ...auth });
+      expect((await getExtendedLikesInfo(post.id, user.accessToken)).likesCount).toBe(1);
+
+      await postsTestManager.updateLikeStatus(post.id, { likeStatus: "Dislike" }, { expectedStatusCode: 204, ...auth });
+      expect(await getExtendedLikesInfo(post.id, user.accessToken)).toEqual({
+        likesCount: 0,
+        dislikesCount: 1,
+        myStatus: "Dislike",
+        newestLikes: [],
+      });
+
+      await postsTestManager.updateLikeStatus(post.id, { likeStatus: "None" }, { expectedStatusCode: 204, ...auth });
+      expect(await getExtendedLikesInfo(post.id, user.accessToken)).toEqual({
+        likesCount: 0,
+        dislikesCount: 0,
+        myStatus: "None",
+        newestLikes: [],
+      });
+    });
+
+    //PUT /posts/:postId/like-status "None" keeps the user's entry and the date of their last reaction
+    it("should keep the user's like entry and its date when the status is set to None", async () => {
+      const post = await createTestPost();
+      const user = await createTestUserAndLogin();
+      const auth = { authHeader: `Bearer ${user.accessToken}` };
+
+      await postsTestManager.updateLikeStatus(post.id, { likeStatus: "Dislike" }, { expectedStatusCode: 204, ...auth });
+      const [dislike] = (await PostModel.findById(post.id).lean())!.likes;
+
+      await postsTestManager.updateLikeStatus(post.id, { likeStatus: "None" }, { expectedStatusCode: 204, ...auth });
+      const likes = (await PostModel.findById(post.id).lean())!.likes;
+      expect(likes).toEqual([{ ...dislike, status: "None" }]);
+      expect(likes[0]!.userLogin).toBe(user.login);
+
+      // Setting None again is a no-op; liking afterwards reuses the same entry
+      await postsTestManager.updateLikeStatus(post.id, { likeStatus: "None" }, { expectedStatusCode: 204, ...auth });
+      await postsTestManager.updateLikeStatus(post.id, { likeStatus: "Like" }, { expectedStatusCode: 204, ...auth });
+      const afterLike = (await PostModel.findById(post.id).lean())!.likes;
+      expect(afterLike).toHaveLength(1);
+      expect(afterLike[0]!.status).toBe("Like");
+    });
+
+    //PUT /posts/:postId/like-status 204 "None" from a user who never reacted stores nothing
+    it("should not create an entry when a user who never reacted sets None", async () => {
+      const post = await createTestPost();
+      const user = await createTestUserAndLogin();
+
+      await postsTestManager.updateLikeStatus(
+        post.id,
+        { likeStatus: "None" },
+        { expectedStatusCode: 204, authHeader: `Bearer ${user.accessToken}` },
+      );
+      expect((await PostModel.findById(post.id).lean())!.likes).toEqual([]);
+    });
+
+    //PUT /posts/:postId/like-status myStatus is per viewer, "None" for anonymous
+    it("should return myStatus for the viewer from the access token", async () => {
+      const post = await createTestPost();
+      const liker = await createTestUserAndLogin({ login: "liker", email: "liker@mail.com" });
+      const other = await createTestUserAndLogin({ login: "other", email: "other@mail.com" });
+
+      await postsTestManager.updateLikeStatus(
+        post.id,
+        { likeStatus: "Like" },
+        { expectedStatusCode: 204, authHeader: `Bearer ${liker.accessToken}` },
+      );
+
+      expect((await getExtendedLikesInfo(post.id, liker.accessToken)).myStatus).toBe("Like");
+      expect((await getExtendedLikesInfo(post.id, other.accessToken)).myStatus).toBe("None");
+      expect((await getExtendedLikesInfo(post.id)).myStatus).toBe("None");
+
+      const list = await request(app)
+        .get("/posts")
+        .set("Authorization", `Bearer ${liker.accessToken}`);
+      expect(list.body.items[0].extendedLikesInfo.myStatus).toBe("Like");
+
+      const blogPosts = await request(app)
+        .get(`/blogs/${post.blogId}/posts`)
+        .set("Authorization", `Bearer ${liker.accessToken}`);
+      expect(blogPosts.body.items[0].extendedLikesInfo.myStatus).toBe("Like");
+    });
+
+    //PUT /posts/:postId/like-status newestLikes holds the 3 most recent likes, newest first
+    it("should return the 3 newest likes, newest first, excluding dislikes", async () => {
+      const post = await createTestPost();
+      const users = [];
+      for (const name of ["user1", "user2", "user3", "user4", "user5"]) {
+        users.push(await createTestUserAndLogin({ login: name, email: `${name}@mail.com` }));
+      }
+
+      // user1..user4 like in order, user5 dislikes
+      for (const [i, user] of users.entries()) {
+        await postsTestManager.updateLikeStatus(
+          post.id,
+          { likeStatus: i === 4 ? "Dislike" : "Like" },
+          { expectedStatusCode: 204, authHeader: `Bearer ${user.accessToken}` },
+        );
+      }
+
+      const info = await getExtendedLikesInfo(post.id);
+      expect(info.likesCount).toBe(4);
+      expect(info.dislikesCount).toBe(1);
+      expect(info.newestLikes.map((like: any) => like.login)).toEqual([
+        "user4",
+        "user3",
+        "user2",
+      ]);
+    });
+
+    //PUT /posts/:postId/like-status keeps the date of the user's first reaction
+    it("should keep addedAt from the first reaction when the status changes", async () => {
+      const post = await createTestPost();
+      const user1 = await createTestUserAndLogin({ login: "user1", email: "user1@mail.com" });
+      const user2 = await createTestUserAndLogin({ login: "user2", email: "user2@mail.com" });
+      const setStatus = (user: { accessToken: string }, likeStatus: string) =>
+        postsTestManager.updateLikeStatus(
+          post.id,
+          { likeStatus },
+          { expectedStatusCode: 204, authHeader: `Bearer ${user.accessToken}` },
+        );
+
+      await setStatus(user1, "Like");
+      const firstAddedAt = (await getExtendedLikesInfo(post.id)).newestLikes[0].addedAt;
+      await setStatus(user2, "Like");
+
+      // user1 goes through None and Dislike, then likes again
+      await setStatus(user1, "None");
+      await setStatus(user1, "Dislike");
+      await setStatus(user1, "Like");
+
+      const info = await getExtendedLikesInfo(post.id);
+      expect(info.newestLikes.map((like: any) => like.login)).toEqual(["user2", "user1"]);
+      expect(info.newestLikes[1].addedAt).toBe(firstAddedAt);
     });
   });
 });

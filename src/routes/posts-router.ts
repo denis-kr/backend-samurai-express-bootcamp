@@ -7,7 +7,11 @@ import {
   optionalAuthMiddleware,
 } from "../middleware/auth/auth-middleware.js";
 import { mapCommentToView } from "../utils/mapCommentToView.js";
-import { createUpdateBodyValidationMiddleware } from "../middleware/validation/validation-posts.js";
+import { mapPostToView } from "../utils/mapPostToView.js";
+import {
+  createUpdateBodyValidationMiddleware,
+  likeStatusValidationMiddleware,
+} from "../middleware/validation/validation-posts.js";
 import { commentsValidationMiddleware } from "../middleware/validation/validation-comments.js";
 import type {
   RequestWithBody,
@@ -18,6 +22,7 @@ import type {
 } from "../utils/types.js";
 import { PostsService } from "../domain/posts-service.js";
 import { CommentsService } from "../domain/comments-service.js";
+import type { LikeStatus } from "../repositories/models/comment-model.js";
 import {
   paginationValidationMiddleware,
   idValidationMiddleware,
@@ -32,9 +37,11 @@ export class PostsRouter {
     @inject(PostsService) private readonly postsService: PostsService,
     @inject(CommentsService) private readonly commentsService: CommentsService,
   ) {
-    this.router.post(
+    this.router.put(
       "/:postId/like-status",
       authMiddleware,
+      likeStatusValidationMiddleware,
+      sendErrorsIfAnyMiddleware,
       this.setLikeStatus.bind(this),
     );
 
@@ -54,12 +61,14 @@ export class PostsRouter {
     );
     this.router.get(
       "/",
+      optionalAuthMiddleware,
       paginationValidationMiddleware,
       sendErrorsIfAnyMiddleware,
       this.getPosts.bind(this),
     );
     this.router.get(
       "/:id",
+      optionalAuthMiddleware,
       idValidationMiddleware,
       sendErrorsIfAnyMiddleware,
       this.getPostById.bind(this),
@@ -82,7 +91,24 @@ export class PostsRouter {
     this.router.delete("/:id", this.deletePost.bind(this));
   }
 
-  async setLikeStatus() {}
+  async setLikeStatus(
+    req: RequestWithParamsAndBody<
+      { postId: string },
+      { likeStatus: LikeStatus }
+    >,
+    res: Response,
+  ) {
+    const isUpdated = await this.postsService.setLikeStatus(
+      req.params.postId,
+      req.userId!,
+      req.body.likeStatus,
+    );
+    if (!isUpdated) {
+      return res.sendStatus(404);
+    }
+
+    return res.sendStatus(204);
+  }
 
   //add new comment to a specific post
   async createCommentForPost(
@@ -196,11 +222,7 @@ export class PostsRouter {
       page: pageNumber,
       pageSize,
       totalCount,
-      items: posts.items.map((post) => ({
-        ...post,
-        id: post._id.toString(),
-        _id: undefined,
-      })),
+      items: posts.items.map((post) => mapPostToView(post, req.userId)),
     });
   }
 
@@ -209,9 +231,7 @@ export class PostsRouter {
     const id = req.params.id;
     const post = await this.postsService.findPostById(id);
     if (post) {
-      return res
-        .status(200)
-        .json({ ...post, id: post._id.toString(), _id: undefined });
+      return res.status(200).json(mapPostToView(post, req.userId));
     } else {
       return res.sendStatus(404);
     }
@@ -243,9 +263,7 @@ export class PostsRouter {
 
     if (!createdPost) return res.sendStatus(500);
 
-    return res
-      .status(201)
-      .json({ ...createdPost, id: createdPost._id.toString(), _id: undefined });
+    return res.status(201).json(mapPostToView(createdPost, null));
   }
 
   //update post by id

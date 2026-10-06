@@ -56,3 +56,11 @@ export const createNewPostForBlogValidationMiddleware = [
   title,
   content,
 ];
+
+export const likeStatusValidationMiddleware = [
+  body("likeStatus")
+    .exists()
+    .withMessage("likeStatus is required")
+    .isIn(["None", "Like", "Dislike"])
+    .withMessage("likeStatus must be one of: None, Like, Dislike"),
+];

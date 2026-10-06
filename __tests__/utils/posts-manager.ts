@@ -20,9 +20,18 @@ export const postsTestManager: any = {
   },
   async getPostById(
     id: string,
-    { expectedStatusCode }: { expectedStatusCode: number }
+    {
+      expectedStatusCode,
+      authHeader,
+    }: { expectedStatusCode: number; authHeader?: string }
   ) {
-    const response = await request(app).get(`/posts/${id}`);
+    const requestObject = request(app).get(`/posts/${id}`);
+
+    if (authHeader) {
+      requestObject.set("Authorization", authHeader);
+    }
+
+    const response = await requestObject;
 
     expect(response.statusCode).toBe(expectedStatusCode);
 
@@ -119,6 +128,26 @@ export const postsTestManager: any = {
     }
 
     const response = await requestObject;
+
+    expect(response.statusCode).toBe(expectedStatusCode);
+
+    return response;
+  },
+  async updateLikeStatus(
+    postId: string,
+    data: { likeStatus?: unknown },
+    {
+      expectedStatusCode,
+      authHeader,
+    }: { expectedStatusCode: number; authHeader?: string }
+  ) {
+    const requestObject = request(app).put(`/posts/${postId}/like-status`);
+
+    if (authHeader) {
+      requestObject.set("Authorization", authHeader);
+    }
+
+    const response = await requestObject.send(data);
 
     expect(response.statusCode).toBe(expectedStatusCode);
 
